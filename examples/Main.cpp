@@ -54,6 +54,9 @@ int main() {
 
   redwood::rt::ExecuteCurrentBufferAsync(tid, 6);
 
+
+  redwood::
+
   redwood::EndReducer();
 
   return 0;
