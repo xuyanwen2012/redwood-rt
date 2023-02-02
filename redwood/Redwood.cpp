@@ -61,6 +61,10 @@ struct ReducerHandler {
   void Init(const int batch_num) {
     for (int i = 0; i < kNumStreams; ++i) {
       nn_buffers[i].Allocate(batch_num);
+
+      internal::AttachStreamMem(i, nn_buffers[i].query_point.data());
+      internal::AttachStreamMem(i, nn_buffers[i].query_idx.data());
+      internal::AttachStreamMem(i, nn_buffers[i].leaf_idx.data());
     }
   };
 
@@ -100,6 +104,9 @@ void SetQueryPoints(const int tid, const void* query_points,
   rhs[tid].nn_results.reserve(kNumStreams);
   rhs[tid].nn_results.emplace_back(num_query);
   rhs[tid].nn_results.emplace_back(num_query);
+
+  internal::AttachStreamMem(0, rhs[tid].nn_results[0].results.data());
+  internal::AttachStreamMem(1, rhs[tid].nn_results[1].results.data());
 }
 
 void SetNodeTables(const void* usm_leaf_node_table, const int num_leaf_nodes) {
@@ -117,19 +124,36 @@ void EndReducer() { delete[] rhs; }
 
 // ------------------- Developer APIs  -------------------
 
-void rt::ExecuteBuffer(int tid, int stream_id, int num_batch_collected) {
+void rt::ExecuteCurrentBufferAsync(int tid, int num_batch_collected) {
   const auto& cb = rhs[tid].CurrentBuffer();
+  const auto current_stream = rhs[tid].cur_collecting;
+
+  std::cout << "rt::ExecuteCurrentBufferAsync() " << current_stream
+            << std::endl;
 
   internal::ProcessNnBuffer(cb.query_point.data(), cb.query_idx.data(),
                             cb.leaf_idx.data(), nullptr,
                             rhs[tid].CurrentResult().results.data(),
-                            num_batch_collected, stream_id);
+                            num_batch_collected, current_stream);
+
+  const auto next_stream = (kNumStreams - 1) - current_stream;
+  internal::DeviceStreamSynchronize(next_stream);
+
+  rhs[tid].nn_buffers[next_stream].Clear();
+  rhs[tid].cur_collecting = next_stream;
+}
+
+void rt::ExecuteBuffer(int tid, int stream_id, int num_batch_collected) {
+  const auto& cb = rhs[tid].CurrentBuffer();
+
+  internal::ProcessNnBuffer(
+      cb.query_point.data(), cb.query_idx.data(), cb.leaf_idx.data(), nullptr,
+      rhs[tid].CurrentResult().results.data(), num_batch_collected, stream_id);
 
   internal::DeviceSynchronize();
 
   for (int i = 0; i < 6; ++i)
     std::cout << "Result: " << rhs[tid].CurrentResult().results[i] << std::endl;
-
   //   Size()
 }
 

@@ -7,6 +7,9 @@ void DeviceWarmUp();
 void DeviceSynchronize();
 void DeviceStreamSynchronize(int stream_id);
 
+// CUDA Only
+void AttachStreamMem(int stream_id, void* addr);
+
 void RegisterLeafNodeTable(const void* leaf_node_table, int num_leaf_nodes);
 
 // Specific to NN
