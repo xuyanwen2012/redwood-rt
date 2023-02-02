@@ -7,7 +7,8 @@
 
 #include <iostream>
 
-std::pair<float *, size_t> LoadData(const std::string &filename) {
+template <typename T>
+std::pair<T *, size_t> LoadData(const std::string &filename) {
   struct stat s;
   stat(filename.c_str(), &s);
 
@@ -17,12 +18,12 @@ std::pair<float *, size_t> LoadData(const std::string &filename) {
     exit(1);
   }
 
-  float *map = reinterpret_cast<float *>(
+  T *map = reinterpret_cast<T *>(
       mmap(nullptr, s.st_size, PROT_READ, MAP_SHARED, fd, 0));
 
   close(fd);
 
-  const auto data_size = s.st_size / sizeof(float);
+  const auto data_size = s.st_size / sizeof(T);
 
   return {map, data_size};
 }
