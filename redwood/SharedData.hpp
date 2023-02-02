@@ -13,7 +13,7 @@ struct SharedData {
   const float* host_query_point_ref;
 
   // num_leaf_nodes * leaf_size
-  const float* usm_leaf_node_table;
+  // const float* usm_leaf_node_table;
 };
 
 // extern

@@ -5,7 +5,7 @@
 
 #include "../include/UsmAlloc.hpp"
 #include "Kernel.hpp"
-#include "SharedData.hpp"
+// #include "SharedData.hpp"
 
 namespace redwood {
 
@@ -79,7 +79,9 @@ struct ReducerHandler {
 
 // ------------------- Global Shared  -------------------
 
-SharedData sdata;
+// SharedData sdata;
+// host_query_point_ref
+const float* host_query_point_ref;
 ReducerHandler* rhs;
 
 // ------------------- Public APIs  -------------------
@@ -99,7 +101,7 @@ void InitReducer(const int num_threads, const int leaf_size,
 
 void SetQueryPoints(const int tid, const void* query_points,
                     const int num_query) {
-  sdata.host_query_point_ref = static_cast<const float*>(query_points);
+  host_query_point_ref = static_cast<const float*>(query_points);
 
   rhs[tid].nn_results.reserve(kNumStreams);
   rhs[tid].nn_results.emplace_back(num_query);
@@ -110,14 +112,19 @@ void SetQueryPoints(const int tid, const void* query_points,
 }
 
 void SetNodeTables(const void* usm_leaf_node_table, const int num_leaf_nodes) {
-  sdata.usm_leaf_node_table = static_cast<const float*>(usm_leaf_node_table);
+  // sdata.usm_leaf_node_table = static_cast<const float*>(usm_leaf_node_table);
 
   internal::RegisterLeafNodeTable(usm_leaf_node_table, num_leaf_nodes);
 }
 
 void ReduceLeafNode(const int tid, const int node_idx, const int query_idx) {
-  rhs[tid].CurrentBuffer().Push(sdata.host_query_point_ref[query_idx],
-                                query_idx, node_idx);
+  rhs[tid].CurrentBuffer().Push(host_query_point_ref[query_idx], query_idx,
+                                node_idx);
+}
+
+void GetReductionResult(const int tid, const int query_idx, void* result) {
+  auto addr = static_cast<float*>(result);
+  *addr = rhs[tid].CurrentResult().results[query_idx];
 }
 
 void EndReducer() { delete[] rhs; }
@@ -154,7 +161,6 @@ void rt::ExecuteBuffer(int tid, int stream_id, int num_batch_collected) {
 
   for (int i = 0; i < 6; ++i)
     std::cout << "Result: " << rhs[tid].CurrentResult().results[i] << std::endl;
-  //   Size()
 }
 
 }  // namespace redwood

@@ -5,8 +5,8 @@ namespace redwood {
 void InitReducer(int num_threads = 1, int leaf_size = 32, int batch_num = 1024,
                  int batch_size = 1024);
 
+// Mostly used by BH
 void StartQuery(int tid, int query_idx);
-void StartQuery(int tid, const void* task_obj);
 
 void ReduceLeafNode(int tid, int node_idx, int query_idx);
 void ReduceBranchNode(int tid, const void* node_element, int query_idx);
@@ -24,7 +24,6 @@ namespace rt {
 // details. This particular function is used for GPU backend Executor Runtime.
 void ExecuteCurrentBufferAsync(int tid, int num_batch_collected);
 
-void ExecuteBufferAsync(int tid, int stream_id, int num_batch_collected);
 void ExecuteBuffer(int tid, int stream_id, int num_batch_collected);
 }  // namespace rt
 
