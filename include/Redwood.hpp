@@ -9,6 +9,8 @@ void InitReducer(int num_threads = 1, int leaf_size = 32, int batch_num = 1024,
 void StartQuery(int tid, int query_idx);
 
 void ReduceLeafNode(int tid, int node_idx, int query_idx);
+void ReduceLeafNode(int tid, int node_idx, int query_idx, const void* q);
+
 void ReduceBranchNode(int tid, const void* node_element, int query_idx);
 
 void GetReductionResult(int tid, int query_idx, void* result);

@@ -43,12 +43,12 @@ int main() {
 
   redwood::rt::ExecuteCurrentBufferAsync(tid, 6);
 
-  const int fake_indecies2[6] = {1, 2, 3, 4, 5, 6};
-  for (int query_idx = 0; query_idx < 6; ++query_idx) {
-    redwood::ReduceLeafNode(tid, fake_indecies2[query_idx], query_idx);
-  }
+  // const int fake_indecies2[6] = {1, 2, 3, 4, 5, 6};
+  // for (int query_idx = 0; query_idx < 6; ++query_idx) {
+  //   redwood::ReduceLeafNode(tid, fake_indecies2[query_idx], query_idx);
+  // }
 
-  redwood::rt::ExecuteCurrentBufferAsync(tid, 6);
+  // redwood::rt::ExecuteCurrentBufferAsync(tid, 6);
 
   float result = 666.6f;
   redwood::GetReductionResult(tid, 0, &result);

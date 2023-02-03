@@ -1,6 +1,5 @@
 #include <iostream>
 
-// #include "../Backend.hpp"
 #include "CudaUtils.cuh"
 #include "cuda_runtime.h"
 
