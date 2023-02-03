@@ -80,9 +80,6 @@ void DeviceWarmUp() { SyclWarmUp(qs[0]); }
 void RegisterLeafNodeTable(const void* leaf_node_table,
                            const int num_leaf_nodes) {
   usm_leaf_node_table = static_cast<const Point4F*>(leaf_node_table);
-
-  // leaf_node_table_buf = std::make_unique<sycl::buffer<DataT>>(
-  //     host_leaf_node_table_ref, sycl::range{num_leaf_nodes * 32});
 }
 
 // CUDA Only, Ignore it in SYCL
@@ -91,32 +88,20 @@ void AttachStreamMem(const int stream_id, void* addr) {}
 // Main entry to the NN Kernel
 void ProcessNnBuffer(const Point4F* query_points, const int* query_idx,
                      const int* leaf_idx, const Point4F* leaf_node_table,
-                     float* out, const int num, const int stream_id) {
+                     float* out, const int num, cosnt int leaf_max_size,
+                     const int stream_id) {
   constexpr auto kernel_func = MyFunctor();
 
-  // const auto query_point = query_points[tid];
-  // const auto q_idx = query_idx[tid];
-  // const auto leaf_id = leaf_idx[tid];
-
-  // const auto task_ptr = buffer.tasks.data();
-  // const auto leaf_idx_ptr = buffer.leaf_idx.data();
-  // const auto result_ptr = nn_results[cur_collecting].results_usm.data();
-
-  const auto local_leaf_size = 32;
-
   qs[stream_id].submit([&](sycl::handler& h) {
-    // const sycl::accessor leaf_table_acc(*leaf_node_table_buf, h,
-    //                                     sycl::read_only);
-
     h.parallel_for(sycl::range(num), [=](const sycl::id<1> idx) {
       const auto leaf_id = leaf_idx[idx];
       const auto q_point = query_points[idx];
       const auto q_idx = query_idx[idx];
 
       auto my_min = std::numeric_limits<float>::max();
-      for (int i = 0; i < local_leaf_size; ++i) {
-        const auto dist = kernel_func(
-            leaf_node_table[leaf_id * local_leaf_size + i], q_point);
+      for (int i = 0; i < leaf_max_size; ++i) {
+        const auto dist =
+            kernel_func(leaf_node_table[leaf_id * leaf_max_size + i], q_point);
 
         my_min = sycl::min(my_min, dist);
       }

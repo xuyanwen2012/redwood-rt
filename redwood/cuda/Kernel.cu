@@ -52,14 +52,15 @@ void AttachStreamMem(const int stream_id, void* addr) {
 // Main entry to the NN Kernel
 void ProcessNnBuffer(const Point4F* query_points, const int* query_idx,
                      const int* leaf_idx, const Point4F* leaf_node_table,
-                     float* out, const int num, const int stream_id) {
+                     float* out, const int num, const int leaf_max_size,
+                     const int stream_id) {
   constexpr auto n_blocks = 1u;
   constexpr auto n_threads = 1024u;
   constexpr auto smem_size = 0;
   NaiveProcessNnBuffer<Point4F, Point4F, float>
       <<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
-          query_points, query_idx, leaf_idx, usm_leaf_node_table, out, num, 32,
-          MyFunctor());
+          query_points, query_idx, leaf_idx, usm_leaf_node_table, out, num,
+          leaf_max_size, MyFunctor());
 }
 
 void DeviceSynchronize() { HANDLE_ERROR(cudaDeviceSynchronize()); }
