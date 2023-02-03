@@ -20,7 +20,7 @@ struct Node {
     return left_child == nullptr && right_child == nullptr;
   }
 
-  _NODISCARD Node* GetChild(const Dir dir) const {
+  _NODISCARD Node *GetChild(const Dir dir) const {
     return dir == Dir::kLeft ? left_child : right_child;
   }
 
@@ -39,9 +39,9 @@ struct Node {
     } tree;
   } node_type;
 
-  Node* left_child;
-  Node* right_child;
-  int uid;  // In this version this is used only for leaf nodes.
+  Node *left_child;
+  Node *right_child;
+  int uid; // In this version this is used only for leaf nodes.
 };
 
 struct KdtParams {
@@ -69,10 +69,10 @@ struct KdtStatistic {
 class KdTree {
   using T = Point4F;
 
- public:
+public:
   KdTree() = delete;
 
-  explicit KdTree(const KdtParams params, const T* in_data, const int n)
+  explicit KdTree(const KdtParams params, const T *in_data, const int n)
       : root_(), in_data_ref_(in_data), node_table_size_(), params_(params) {
     BuildTree(n);
   }
@@ -101,7 +101,7 @@ class KdTree {
     }
   }
 
-  void LoadPayload(T* usm_leaf_node_table) {
+  void LoadPayload(T *usm_leaf_node_table) {
     assert(usm_leaf_node_table != nullptr);
     LoadPayloadRecursive(root_, usm_leaf_node_table);
   }
@@ -110,13 +110,13 @@ class KdTree {
   _NODISCARD KdtParams GetParams() const { return params_; }
   //   _NODISCARD DataSetT& GetNodeContentTable() { return
   //   h_node_content_table_; }
-  _NODISCARD const Node* GetRoot() const { return root_; }
+  _NODISCARD const Node *GetRoot() const { return root_; }
 
-  Node* BuildRecursive(const int left_idx, const int right_idx,
+  Node *BuildRecursive(const int left_idx, const int right_idx,
                        const int depth) {
     const auto node = new Node;
 
-    if (right_idx - left_idx <= (int)params_.leaf_max_size)  // minimum is 1
+    if (right_idx - left_idx <= (int)params_.leaf_max_size) // minimum is 1
     {
       ++statistic_.num_leaf_nodes;
       statistic_.max_depth = std::max(depth, statistic_.max_depth);
@@ -154,7 +154,7 @@ class KdTree {
     return node;
   }
 
-  void LoadPayloadRecursive(const Node* cur, T* usm_leaf_node_table) {
+  void LoadPayloadRecursive(const Node *cur, T *usm_leaf_node_table) {
     if (cur->IsLeaf()) {
       auto counter = 0u;
       const auto offset = cur->uid * params_.leaf_max_size;
@@ -185,12 +185,12 @@ class KdTree {
   }
 
   // Accessor
-  Node* root_;
+  Node *root_;
   std::vector<int> v_acc_;
 
   // Datasets (ref to Input Data, and the Node Contents)
   //   const DataSetT& data_set_;
-  const T* in_data_ref_;
+  const T *in_data_ref_;
 
   //   DataSetT h_node_content_table_;
   int node_table_size_;
@@ -200,4 +200,4 @@ class KdTree {
   KdtStatistic statistic_;
 };
 
-}  // namespace kdt
+} // namespace kdt

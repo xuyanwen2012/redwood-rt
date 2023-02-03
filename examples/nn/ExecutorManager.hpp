@@ -16,7 +16,7 @@ enum class ExecutionState { kWorking, kFinished };
 
 // Basically a nicer looking wrapper for passing function arguments
 struct TaskList {
-  TaskList(const Point4F* query_points, const int* query_indexis,
+  TaskList(const Point4F *query_points, const int *query_indexis,
            const int num_query)
       : q_point(query_points), q_idx(query_indexis), m(num_query) {
     cur = 0;
@@ -24,17 +24,17 @@ struct TaskList {
 
   bool Done() const { return cur == m; }
 
-  const Point4F* q_point;
-  const int* q_idx;
+  const Point4F *q_point;
+  const int *q_idx;
   const int m;
   int cur;
 };
 
 template <typename ExecutorT>
-inline void ProcessExecutors(std::vector<ExecutorT>& executors,
-                             TaskList& task_list,
+inline void ProcessExecutors(std::vector<ExecutorT> &executors,
+                             TaskList &task_list,
                              typename std::vector<ExecutorT>::iterator start,
-                             typename std::vector<ExecutorT>::iterator& end) {
+                             typename std::vector<ExecutorT>::iterator &end) {
   for (auto it = start; it != end; ++it) {
     if (it->Finished()) {
       if (task_list.Done()) {
@@ -53,7 +53,7 @@ inline void ProcessExecutors(std::vector<ExecutorT>& executors,
 }
 
 struct CallStackField {
-  kdt::Node* current;
+  kdt::Node *current;
   int axis;
   float train;
   kdt::Dir dir;
@@ -91,7 +91,7 @@ struct DummyExecutor {
 };
 
 class NnExecutor {
- public:
+public:
   NnExecutor() = delete;
   NnExecutor(const int tid) : tid_(tid), state_(ExecutionState::kFinished) {
     stack_.reserve(16);
@@ -115,12 +115,13 @@ class NnExecutor {
 
   void Resume() { Execute(); }
 
- private:
+private:
   // TODO: In future, this function will need to be code generated from our DSL
   void Execute() {
     constexpr auto kernel_func = MyFunctorHost();
 
-    if (state_ == ExecutionState::kWorking) goto my_resume_point;
+    if (state_ == ExecutionState::kWorking)
+      goto my_resume_point;
 
     state_ = ExecutionState::kWorking;
     cur_ = tree_ref->root_;
@@ -201,9 +202,9 @@ class NnExecutor {
   std::vector<CallStackField> stack_;
 
   ExecutionState state_;
-  kdt::Node* cur_;
+  kdt::Node *cur_;
 
-  float* cached_result_addr_;  // a pointer to the USM of 1 float
+  float *cached_result_addr_; // a pointer to the USM of 1 float
 };
 
 // Each CPU thread should have one instance of a manager, each manager takes a
@@ -219,17 +220,15 @@ class NnExecutor {
 
 // template <typename T, typename ExecutorT>
 class ExecutorManager {
- public:
+public:
   ExecutorManager() = delete;
 
   ExecutorManager(const std::shared_ptr<kdt::KdTree> tree,
-                  const Point4F* query_points,
-                  const int* query_idx,  // basically uid for each query
+                  const Point4F *query_points,
+                  const int *query_idx, // basically uid for each query
                   const int my_m, const int num_batches, const int tid = 0)
-      : tid_(tid),
-        tasks_list_(query_points, query_idx, my_m),
-        executors_(2 * num_batches, tid),
-        num_batches_(num_batches) {
+      : tid_(tid), tasks_list_(query_points, query_idx, my_m),
+        executors_(2 * num_batches, tid), num_batches_(num_batches) {
     // Save reference to
     if (!tree_ref) {
       std::cout << "[DEBUG] kdt::KdTree Reference Set!" << std::endl;
@@ -268,7 +267,7 @@ class ExecutorManager {
     std::cout << "Manager (" << tid_ << ") has ended.\n";
   }
 
- private:
+private:
   int tid_;
 
   TaskList tasks_list_;

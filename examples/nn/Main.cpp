@@ -9,12 +9,12 @@
 #include "Redwood.hpp"
 #include "UsmAlloc.hpp"
 
-float CpuNaiveQuery(const Point4F* in_data, const Point4F q, const unsigned n) {
+float CpuNaiveQuery(const Point4F *in_data, const Point4F q, const unsigned n) {
   constexpr auto kernel_func = MyFunctorHost();
 
   std::vector<float> dists(n);
   std::transform(in_data, in_data + n, dists.begin(),
-                 [&](const auto& p) { return kernel_func(p, q); });
+                 [&](const auto &p) { return kernel_func(p, q); });
 
   return *std::min_element(dists.begin(), dists.end());
 }
@@ -62,7 +62,7 @@ int main() {
 
   // Display Results
   for (int i = 0; i < 5; ++i) {
-    float* rst;
+    float *rst;
     redwood::GetReductionResult(tid, i, &rst);
     std::cout << "Query " << i << ":\n"
               << "\tQuery point " << q_data[i] << '\n'
