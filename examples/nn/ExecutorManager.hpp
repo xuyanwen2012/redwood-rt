@@ -100,9 +100,7 @@ class NnExecutor {
   bool Finished() const { return state_ == ExecutionState::kFinished; }
 
   void StartQuery(const Point4F query_point, const int query_idx) {
-    // task_ = task;
-
-    if (query_idx < 32) std::cout << "StartQuery " << query_idx << std::endl;
+    // if (query_idx < 32) std::cout << "StartQuery " << query_idx << std::endl;
 
     my_query_point_ = query_point;
     my_query_idx_ = query_idx;
@@ -110,17 +108,10 @@ class NnExecutor {
     stack_.clear();
     cur_ = nullptr;
 
-    redwood::GetReductionResult(0 /*tid*/, query_idx, &cached_result_addr_);
+    // Basically, ask for a piece of USM from the device
+    redwood::GetReductionResult(tid_, query_idx, &cached_result_addr_);
     Execute();
   }
-
-  // void StartQuery(const Task& task) {
-  //   task_ = task;
-  //   stack_.clear();
-  //   cur_ = nullptr;
-  //   GetReductionResult(0, task.query_idx, &cached_result_addr_);
-  //   Execute();
-  // }
 
   void Resume() { Execute(); }
 
@@ -142,8 +133,6 @@ class NnExecutor {
           // redwood::ReduceLeafNodeWithTask(0, cur_->uid, &task_);
           redwood::ReduceLeafNode(tid_, cur_->uid, my_query_idx_);
 
-          // std::cout << "\tleaf " << cur_->uid << std::endl;
-
           // **** Coroutine Reuturn ****
           return;
         my_resume_point:
@@ -157,8 +146,6 @@ class NnExecutor {
 
         const unsigned accessor_idx =
             tree_ref->v_acc_[cur_->node_type.tree.idx_mid];
-
-        // std::cout << "\tbranch " << accessor_idx << std::endl;
 
         const float dist =
             kernel_func(tree_ref->in_data_ref_[accessor_idx], my_query_point_);

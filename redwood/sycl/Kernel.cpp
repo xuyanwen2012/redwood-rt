@@ -85,10 +85,8 @@ void AttachStreamMem(const int stream_id, void* addr) {}
 
 // Main entry to the NN Kernel
 void ProcessNnBuffer(const Point4F* query_points, const int* query_idx,
-                     const int* leaf_idx,
-                     // const Point4F* leaf_node_table,
-                     float* out, const int num, const int leaf_max_size,
-                     const int stream_id) {
+                     const int* leaf_idx, float* out, const int num,
+                     const int leaf_max_size, const int stream_id) {
   constexpr auto kernel_func = MyFunctor();
 
   const auto my_leaf_node_table = usm_leaf_node_table;
