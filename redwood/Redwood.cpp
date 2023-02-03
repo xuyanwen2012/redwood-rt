@@ -4,8 +4,8 @@
 #include <iostream>
 
 #include "../include/PointCloud.hpp"
-#include "../include/UsmAlloc.hpp"
 #include "Kernel.hpp"
+#include "NnBuffer.hpp"
 
 namespace redwood {
 
@@ -16,46 +16,6 @@ int stored_leaf_size;
 int stored_num_batches;
 int stored_num_threads;
 // int stored_num_leaf_nodes
-
-template <typename T>
-struct NnBuffer {
-  void Allocate(const int num_batch) {
-    query_point.reserve(num_batch);
-    query_idx.reserve(num_batch);
-    leaf_idx.reserve(num_batch);
-  }
-
-  size_t Size() const { return leaf_idx.size(); }
-
-  void Clear() {
-    // TODO: no need to clear every time, just overwrite the value
-    query_point.clear();
-    query_idx.clear();
-    leaf_idx.clear();
-  }
-
-  void Push(const T& q, const int q_idx, const int leaf_id) {
-    query_point.push_back(q);
-    query_idx.push_back(q_idx);
-    leaf_idx.push_back(leaf_id);
-
-    // std::cout << q << " Pushed. " << leaf_id << "( " << Size() << "/"
-    //           << leaf_idx.capacity() << ")" << std::endl;
-  }
-
-  UsmVector<T> query_point;
-  UsmVector<int> query_idx;
-  UsmVector<int> leaf_idx;
-};
-
-template <typename T>
-struct NnResult {
-  NnResult(const int num_query) : results(num_query) {
-    std::fill(results.begin(), results.end(), std::numeric_limits<T>::max());
-  }
-
-  UsmVector<T> results;
-};
 
 template <typename QueryT, typename ResultT>
 struct ReducerHandler {
@@ -133,9 +93,6 @@ void EndReducer() { delete[] rhs; }
 void rt::ExecuteCurrentBufferAsync(int tid, int num_batch_collected) {
   const auto& cb = rhs[tid].CurrentBuffer();
   const auto current_stream = rhs[tid].cur_collecting;
-
-  // std::cout << "rt::ExecuteCurrentBufferAsync() " << current_stream <<
-  // std::endl;
 
   internal::ProcessNnBuffer(
       cb.query_point.data(), cb.query_idx.data(), cb.leaf_idx.data(),

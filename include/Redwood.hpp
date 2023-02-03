@@ -5,7 +5,8 @@ namespace redwood {
 void InitReducer(int num_threads = 1, int leaf_size = 32, int batch_num = 1024,
                  int batch_size = 1024);
 
-// Mostly used by BH
+///
+/// Mostly used by BH, or FPGA
 void StartQuery(int tid, int query_idx);
 
 void ReduceLeafNode(int tid, int node_idx, int query_idx);

@@ -3,6 +3,10 @@
 #include <algorithm>
 #include <iostream>
 
+// The purpose of this File is just to provide a uniformed vector type for both
+// client and backend code. In CUDA, there is a almost equivalent class called
+// 'vector_types.h'. But if the client uses something different, then they have
+// to convert that type to a backend type.
 template <int Dim, typename T>
 struct Point {
   Point() = default;
