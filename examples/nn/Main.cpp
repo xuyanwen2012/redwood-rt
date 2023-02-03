@@ -63,7 +63,7 @@ int main() {
   // Display Results
   for (int i = 0; i < 5; ++i) {
     float* rst;
-    redwood::GetReductionResult(tid, 0, &rst);
+    redwood::GetReductionResult(tid, i, &rst);
     std::cout << "Query " << i << ":\n"
               << "\tQuery point " << q_data[i] << '\n'
               << "\tresult:      \t" << *rst << '\n';
