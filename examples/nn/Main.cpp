@@ -4,9 +4,20 @@
 #include "../KDTree.hpp"
 #include "../LoadFile.hpp"
 #include "ExecutorManager.hpp"
+#include "HostKernelFunc.hpp"
 #include "PointCloud.hpp"
 #include "Redwood.hpp"
 #include "UsmAlloc.hpp"
+
+float CpuNaiveQuery(const Point4F* in_data, const Point4F q, const unsigned n) {
+  constexpr auto kernel_func = MyFunctorHost();
+
+  std::vector<float> dists(n);
+  std::transform(in_data, in_data + n, dists.begin(),
+                 [&](const auto& p) { return kernel_func(p, q); });
+
+  return *std::min_element(dists.begin(), dists.end());
+}
 
 int main() {
   const auto [in_data, n] = LoadData<Point4F>("../../data/in_4f.dat");
@@ -45,26 +56,24 @@ int main() {
   std::vector<int> q_idx(m);
   std::iota(q_idx.begin(), q_idx.end(), 0);
 
-  ExecutorManager(kdt, q_data, q_idx.data(), m, num_batches, tid);
+  ExecutorManager manager(kdt, q_data, q_idx.data(), m, num_batches, tid);
 
-  // const int fake_indecies[6] = {5, 6, 1, 2, 3, 6};
-  // for (int query_idx = 0; query_idx < 6; ++query_idx) {
-  //   redwood::ReduceLeafNode(tid, fake_indecies[query_idx], query_idx);
-  // }
+  manager.StartTraversals();
 
-  // redwood::rt::ExecuteCurrentBufferAsync(tid, 6);
+  // Display Results
+  for (int i = 0; i < 5; ++i) {
+    float* rst;
+    redwood::GetReductionResult(tid, 0, &rst);
+    std::cout << "Query " << i << ":\n"
+              << "\tQuery point " << q_data[i] << '\n'
+              << "\tresult:      \t" << *rst << '\n';
 
-  // const int fake_indecies2[6] = {1, 2, 3, 4, 5, 6};
-  // for (int query_idx = 0; query_idx < 6; ++query_idx) {
-  //   redwood::ReduceLeafNode(tid, fake_indecies2[query_idx], query_idx);
-  // }
-
-  // redwood::rt::ExecuteCurrentBufferAsync(tid, 6);
-
-  // float result = 666.6f;
-  // redwood::GetReductionResult(tid, 0, &result);
-
-  // std::cout << "Result: " << result << std::endl;
+    if constexpr (constexpr auto show_ground_truth = true) {
+      std::cout << "\tground_truth: \t" << CpuNaiveQuery(in_data, q_data[i], n)
+                << '\n';
+    }
+    std::cout << std::endl;
+  }
 
   redwood::EndReducer();
 

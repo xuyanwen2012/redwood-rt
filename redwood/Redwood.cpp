@@ -39,8 +39,8 @@ struct NnBuffer {
     query_idx.push_back(q_idx);
     leaf_idx.push_back(leaf_id);
 
-    std::cout << q << " Pushed. " << leaf_id << "( " << Size() << "/"
-              << leaf_idx.capacity() << ")" << std::endl;
+    // std::cout << q << " Pushed. " << leaf_id << "( " << Size() << "/"
+    //           << leaf_idx.capacity() << ")" << std::endl;
   }
 
   UsmVector<T> query_point;
@@ -122,8 +122,8 @@ void ReduceLeafNode(const int tid, const int node_idx, const int query_idx) {
 }
 
 void GetReductionResult(const int tid, const int query_idx, void* result) {
-  auto addr = static_cast<float*>(result);
-  *addr = rhs[tid].CurrentResult().results[query_idx];
+  auto addr = static_cast<float**>(result);
+  *addr = &rhs[tid].CurrentResult().results[query_idx];
 }
 
 void EndReducer() { delete[] rhs; }
@@ -134,8 +134,8 @@ void rt::ExecuteCurrentBufferAsync(int tid, int num_batch_collected) {
   const auto& cb = rhs[tid].CurrentBuffer();
   const auto current_stream = rhs[tid].cur_collecting;
 
-  std::cout << "rt::ExecuteCurrentBufferAsync() " << current_stream
-            << std::endl;
+  // std::cout << "rt::ExecuteCurrentBufferAsync() " << current_stream <<
+  // std::endl;
 
   internal::ProcessNnBuffer(
       cb.query_point.data(), cb.query_idx.data(), cb.leaf_idx.data(),

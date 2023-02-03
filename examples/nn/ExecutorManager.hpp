@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "../KDTree.hpp"
+#include "HostKernelFunc.hpp"
+#include "Redwood.hpp"
 
 // Reference to the kd tree
 inline std::shared_ptr<kdt::KdTree> tree_ref;
@@ -16,7 +18,9 @@ enum class ExecutionState { kWorking, kFinished };
 struct TaskList {
   TaskList(const Point4F* query_points, const int* query_indexis,
            const int num_query)
-      : q_point(query_points), q_idx(query_indexis), m(num_query){};
+      : q_point(query_points), q_idx(query_indexis), m(num_query) {
+    cur = 0;
+  };
 
   bool Done() const { return cur == m; }
 
@@ -38,7 +42,8 @@ inline void ProcessExecutors(std::vector<ExecutorT>& executors,
         --end;
         --it;
       } else {
-        it->StartQuery(task_list.q_idx[task_list.cur]);
+        it->StartQuery(task_list.q_point[task_list.cur],
+                       task_list.q_idx[task_list.cur]);
         ++task_list.cur;
       }
     } else {
@@ -46,8 +51,6 @@ inline void ProcessExecutors(std::vector<ExecutorT>& executors,
     }
   }
 }
-
-class NnExecutor;
 
 struct CallStackField {
   kdt::Node* current;
@@ -85,6 +88,135 @@ struct DummyExecutor {
 
   int my_task;
   int steps;
+};
+
+class NnExecutor {
+ public:
+  NnExecutor() = delete;
+  NnExecutor(const int tid) : tid_(tid), state_(ExecutionState::kFinished) {
+    stack_.reserve(16);
+  }
+
+  bool Finished() const { return state_ == ExecutionState::kFinished; }
+
+  void StartQuery(const Point4F query_point, const int query_idx) {
+    // task_ = task;
+
+    if (query_idx < 32) std::cout << "StartQuery " << query_idx << std::endl;
+
+    my_query_point_ = query_point;
+    my_query_idx_ = query_idx;
+
+    stack_.clear();
+    cur_ = nullptr;
+
+    redwood::GetReductionResult(0 /*tid*/, query_idx, &cached_result_addr_);
+    Execute();
+  }
+
+  // void StartQuery(const Task& task) {
+  //   task_ = task;
+  //   stack_.clear();
+  //   cur_ = nullptr;
+  //   GetReductionResult(0, task.query_idx, &cached_result_addr_);
+  //   Execute();
+  // }
+
+  void Resume() { Execute(); }
+
+ private:
+  // TODO: In future, this function will need to be code generated from our DSL
+  void Execute() {
+    constexpr auto kernel_func = MyFunctorHost();
+
+    if (state_ == ExecutionState::kWorking) goto my_resume_point;
+
+    state_ = ExecutionState::kWorking;
+    cur_ = tree_ref->root_;
+
+    // Begin Iteration
+    while (cur_ != nullptr || !stack_.empty()) {
+      // Traverse all the way to left most leaf node
+      while (cur_ != nullptr) {
+        if (cur_->IsLeaf()) {
+          // redwood::ReduceLeafNodeWithTask(0, cur_->uid, &task_);
+          redwood::ReduceLeafNode(tid_, cur_->uid, my_query_idx_);
+
+          // std::cout << "\tleaf " << cur_->uid << std::endl;
+
+          // **** Coroutine Reuturn ****
+          return;
+        my_resume_point:
+          // ****************************
+
+          cur_ = nullptr;
+          continue;
+        }
+
+        // **** Reduction at tree node ****
+
+        const unsigned accessor_idx =
+            tree_ref->v_acc_[cur_->node_type.tree.idx_mid];
+
+        // std::cout << "\tbranch " << accessor_idx << std::endl;
+
+        const float dist =
+            kernel_func(tree_ref->in_data_ref_[accessor_idx], my_query_point_);
+
+        *cached_result_addr_ = std::min(*cached_result_addr_, dist);
+
+        // **********************************
+
+        const int axis = cur_->node_type.tree.axis;
+        const float train = tree_ref->in_data_ref_[accessor_idx].data[axis];
+        const kdt::Dir dir = my_query_point_.data[axis] < train
+                                 ? kdt::Dir::kLeft
+                                 : kdt::Dir::kRight;
+
+        stack_.push_back({cur_, axis, train, dir});
+        cur_ = cur_->GetChild(dir);
+      }
+
+      // We resume back from Break point, and now we are still in the branch
+      // node, we can check if there's any thing left on the stack.
+      if (!stack_.empty()) {
+        const auto [last_cur, axis, train, dir] = stack_.back();
+        stack_.pop_back();
+
+        // Check if there is a possibility of the NN lies on the other half
+        // If the difference between the query point and the other splitting
+        // plane is greater than the current found minimum distance, then it
+        // is impossible to have a NN there.
+
+        Point4F a{};
+        Point4F b{};
+        a.data[axis] = my_query_point_.data[axis];
+        b.data[axis] = train;
+        const auto diff = kernel_func(a, b);
+        if (diff < *cached_result_addr_) {
+          cur_ = last_cur->GetChild(FlipDir(dir));
+        }
+      }
+    }
+
+    // Done traversals, Write back to final results
+    state_ = ExecutionState::kFinished;
+  }
+
+  int tid_;
+
+  // Actually essential data in a executor
+  // int task_;
+
+  Point4F my_query_point_;
+  int my_query_idx_;
+
+  std::vector<CallStackField> stack_;
+
+  ExecutionState state_;
+  kdt::Node* cur_;
+
+  float* cached_result_addr_;  // a pointer to the USM of 1 float
 };
 
 // Each CPU thread should have one instance of a manager, each manager takes a
@@ -129,21 +261,31 @@ class ExecutorManager {
   void StartTraversals() {
     std::cout << "Manager (" << tid_ << ") started.\n";
 
-    // 'mid_point' will be modified
-    auto mid_point = executors_.begin() + executors_.size() / 2;
-    ProcessExecutors<DummyExecutor>(executors_, tasks_list_, executors_.begin(),
-                                    mid_point);
+    while (!executors_.empty()) {
+      // 'mid_point' will be modified
+      auto mid_point = executors_.begin() + executors_.size() / 2;
+      ProcessExecutors<NnExecutor>(executors_, tasks_list_, executors_.begin(),
+                                   mid_point);
 
-    auto end_point = executors_.end();
-    ProcessExecutors<DummyExecutor>(executors_, tasks_list_, mid_point,
-                                    end_point);
+      redwood::rt::ExecuteCurrentBufferAsync(
+          tid_, std::distance(executors_.begin(), mid_point));
+
+      auto end_point = executors_.end();
+      ProcessExecutors<NnExecutor>(executors_, tasks_list_, mid_point,
+                                   end_point);
+
+      redwood::rt::ExecuteCurrentBufferAsync(
+          tid_, std::distance(mid_point, executors_.end()));
+    }
+
+    std::cout << "Manager (" << tid_ << ") has ended.\n";
   }
 
  private:
   int tid_;
 
   TaskList tasks_list_;
-  std::vector<DummyExecutor> executors_;
+  std::vector<NnExecutor> executors_;
 
   const int num_batches_;
 };
