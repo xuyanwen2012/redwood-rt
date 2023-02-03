@@ -13,8 +13,6 @@ sycl::queue qs[kNumStreams];
 // Global variable
 const Point4F* usm_leaf_node_table = nullptr;
 
-// std::unique_ptr<sycl::buffer<DataT>> leaf_node_table_buf;
-
 void ShowDevice(const sycl::queue& q) {
   // Output platform and device information.
   const auto device = q.get_device();
@@ -82,15 +80,18 @@ void RegisterLeafNodeTable(const void* leaf_node_table,
   usm_leaf_node_table = static_cast<const Point4F*>(leaf_node_table);
 }
 
-// CUDA Only, Ignore it in SYCL
+// CUDA Only, Ignore it in SYCL.
 void AttachStreamMem(const int stream_id, void* addr) {}
 
 // Main entry to the NN Kernel
 void ProcessNnBuffer(const Point4F* query_points, const int* query_idx,
-                     const int* leaf_idx, const Point4F* leaf_node_table,
-                     float* out, const int num, cosnt int leaf_max_size,
+                     const int* leaf_idx,
+                     // const Point4F* leaf_node_table,
+                     float* out, const int num, const int leaf_max_size,
                      const int stream_id) {
   constexpr auto kernel_func = MyFunctor();
+
+  const auto my_leaf_node_table = usm_leaf_node_table;
 
   qs[stream_id].submit([&](sycl::handler& h) {
     h.parallel_for(sycl::range(num), [=](const sycl::id<1> idx) {
@@ -100,8 +101,8 @@ void ProcessNnBuffer(const Point4F* query_points, const int* query_idx,
 
       auto my_min = std::numeric_limits<float>::max();
       for (int i = 0; i < leaf_max_size; ++i) {
-        const auto dist =
-            kernel_func(leaf_node_table[leaf_id * leaf_max_size + i], q_point);
+        const auto dist = kernel_func(
+            my_leaf_node_table[leaf_id * leaf_max_size + i], q_point);
 
         my_min = sycl::min(my_min, dist);
       }
@@ -111,7 +112,9 @@ void ProcessNnBuffer(const Point4F* query_points, const int* query_idx,
   });
 }
 
-void DeviceSynchronize() {}
+void DeviceSynchronize() {
+  for (int i = 0; i < kNumStreams; ++i) qs[i].wait();
+}
 
 void DeviceStreamSynchronize(const int stream_id) { qs[stream_id].wait(); }
 

@@ -17,7 +17,7 @@ void RegisterLeafNodeTable(const void* leaf_node_table, int num_leaf_nodes);
 
 // Specific to NN
 void ProcessNnBuffer(const Point4F* query_points, const int* query_idx,
-                     const int* leaf_idx, const Point4F* leaf_node_table,
-                     float* out, int num, int leaf_max_size, int stream_id);
+                     const int* leaf_idx, float* out, int num,
+                     int leaf_max_size, int stream_id);
 
 }  // namespace redwood::internal

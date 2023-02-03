@@ -137,10 +137,10 @@ void rt::ExecuteCurrentBufferAsync(int tid, int num_batch_collected) {
   std::cout << "rt::ExecuteCurrentBufferAsync() " << current_stream
             << std::endl;
 
-  internal::ProcessNnBuffer(cb.query_point.data(), cb.query_idx.data(),
-                            cb.leaf_idx.data(), nullptr,
-                            rhs[tid].CurrentResult().results.data(),
-                            num_batch_collected, current_stream);
+  internal::ProcessNnBuffer(
+      cb.query_point.data(), cb.query_idx.data(), cb.leaf_idx.data(),
+      rhs[tid].CurrentResult().results.data(), num_batch_collected,
+      stored_leaf_size, current_stream);
 
   const auto next_stream = (kNumStreams - 1) - current_stream;
   internal::DeviceStreamSynchronize(next_stream);
@@ -148,20 +148,5 @@ void rt::ExecuteCurrentBufferAsync(int tid, int num_batch_collected) {
   rhs[tid].nn_buffers[next_stream].Clear();
   rhs[tid].cur_collecting = next_stream;
 }
-
-// void rt::ExecuteBuffer(int tid, int stream_id, int num_batch_collected) {
-//   const auto& cb = rhs[tid].CurrentBuffer();
-
-//   internal::ProcessNnBuffer(
-//       cb.query_point.data(), cb.query_idx.data(), cb.leaf_idx.data(),
-//       nullptr, rhs[tid].CurrentResult().results.data(), num_batch_collected,
-//       stream_id);
-
-//   internal::DeviceSynchronize();
-
-//   for (int i = 0; i < 6; ++i)
-//     std::cout << "Result: " << rhs[tid].CurrentResult().results[i] <<
-//     std::endl;
-// }
 
 }  // namespace redwood

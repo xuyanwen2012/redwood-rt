@@ -1,10 +1,13 @@
 include ../Makefile.inc
 
-# all:
-sycl: Redwood.o
+OBJ := $(wildcard *.o)
+
+all: sycl cuda
+
+sycl: Redwood.o 
 	ar rcs ../lib/RedwoodSycl.a Redwood.o ./sycl/UsmAlloc.o ./sycl/Kernel.o
 
-cuda: Redwood.o
+cuda: Redwood.o 
 	ar rcs ../lib/RedwoodCuda.a Redwood.o ./cuda/UsmAlloc.o ./cuda/Kernel.o 
 
 Redwood.o:
