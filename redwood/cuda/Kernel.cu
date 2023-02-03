@@ -2,6 +2,7 @@
 
 #include <limits>
 
+// #include "../../include/PointCould.hpp"
 #include "../Kernel.hpp"
 #include "CudaUtils.cuh"
 #include "KernelFunc.cuh"
@@ -25,9 +26,7 @@ __global__ void CudaWarmup() {
 
 namespace redwood::internal {
 
-void BackendInitialization() {}
-
-void DeviceWarmUp() {
+void BackendInitialization() {
   CudaWarmup<<<1, 1024>>>();
   HANDLE_ERROR(cudaDeviceSynchronize());
 }
@@ -50,15 +49,17 @@ void AttachStreamMem(const int stream_id, void* addr) {
 }
 
 // Main entry to the NN Kernel
-void ProcessNnBuffer(const Point4F* query_points, const int* query_idx,
+void ProcessNnBuffer(const void* query_points, const int* query_idx,
                      const int* leaf_idx, float* out, const int num,
                      const int leaf_max_size, const int stream_id) {
+  auto my_query_points = static_cast<const Point4F*>(query_points);
+
   constexpr auto n_blocks = 1u;
   constexpr auto n_threads = 1024u;
   constexpr auto smem_size = 0;
   NaiveProcessNnBuffer<Point4F, Point4F, float>
       <<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
-          query_points, query_idx, leaf_idx, usm_leaf_node_table, out, num,
+          my_query_points, query_idx, leaf_idx, usm_leaf_node_table, out, num,
           leaf_max_size, MyFunctor());
 }
 

@@ -71,9 +71,9 @@ void BackendInitialization() {
     qs[i] = sycl::queue(qs[0].get_context(), device);
 
   ShowDevice(qs[0]);
-}
 
-void DeviceWarmUp() { SyclWarmUp(qs[0]); }
+  SyclWarmUp(qs[0]);
+}
 
 void RegisterLeafNodeTable(const void* leaf_node_table,
                            const int num_leaf_nodes) {
@@ -84,9 +84,11 @@ void RegisterLeafNodeTable(const void* leaf_node_table,
 void AttachStreamMem(const int stream_id, void* addr) {}
 
 // Main entry to the NN Kernel
-void ProcessNnBuffer(const Point4F* query_points, const int* query_idx,
+void ProcessNnBuffer(const void* query_points, const int* query_idx,
                      const int* leaf_idx, float* out, const int num,
                      const int leaf_max_size, const int stream_id) {
+  auto my_query_points = static_cast<const Point4F*>(query_points);
+
   constexpr auto kernel_func = MyFunctor();
 
   const auto my_leaf_node_table = usm_leaf_node_table;
@@ -94,7 +96,7 @@ void ProcessNnBuffer(const Point4F* query_points, const int* query_idx,
   qs[stream_id].submit([&](sycl::handler& h) {
     h.parallel_for(sycl::range(num), [=](const sycl::id<1> idx) {
       const auto leaf_id = leaf_idx[idx];
-      const auto q_point = query_points[idx];
+      const auto q_point = my_query_points[idx];
       const auto q_idx = query_idx[idx];
 
       auto my_min = std::numeric_limits<float>::max();

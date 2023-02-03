@@ -52,7 +52,6 @@ void InitReducer(const int num_threads, const int leaf_size,
   stored_num_batches = batch_num;
 
   internal::BackendInitialization();
-  internal::DeviceWarmUp();
 
   rhs = new ReducerHandler<Point4F, float>[num_threads];
   for (int i = 0; i < num_threads; ++i) {
