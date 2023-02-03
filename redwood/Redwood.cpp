@@ -3,9 +3,9 @@
 #include <array>
 #include <iostream>
 
+#include "../include/PointCloud.hpp"
 #include "../include/UsmAlloc.hpp"
 #include "Kernel.hpp"
-// #include "SharedData.hpp"
 
 namespace redwood {
 
@@ -57,6 +57,7 @@ struct NnResult {
   UsmVector<T> results;
 };
 
+template <typename QueryT, typename ResultT>
 struct ReducerHandler {
   void Init(const int batch_num) {
     for (int i = 0; i < kNumStreams; ++i) {
@@ -68,21 +69,19 @@ struct ReducerHandler {
     }
   };
 
-  std::array<NnBuffer<float>, kNumStreams> nn_buffers;
-  std::vector<NnResult<float>> nn_results;
+  std::array<NnBuffer<QueryT>, kNumStreams> nn_buffers;
+  std::vector<NnResult<ResultT>> nn_results;
 
-  NnBuffer<float>& CurrentBuffer() { return nn_buffers[cur_collecting]; }
-  NnResult<float>& CurrentResult() { return nn_results[cur_collecting]; }
+  NnBuffer<QueryT>& CurrentBuffer() { return nn_buffers[cur_collecting]; }
+  NnResult<ResultT>& CurrentResult() { return nn_results[cur_collecting]; }
 
   int cur_collecting = 0;
 };
 
 // ------------------- Global Shared  -------------------
 
-// SharedData sdata;
-// host_query_point_ref
-const float* host_query_point_ref;
-ReducerHandler* rhs;
+const Point4F* host_query_point_ref;
+ReducerHandler<Point4F, float>* rhs;
 
 // ------------------- Public APIs  -------------------
 
@@ -93,7 +92,7 @@ void InitReducer(const int num_threads, const int leaf_size,
   stored_num_batches = batch_num;
   internal::DeviceWarmUp();
 
-  rhs = new ReducerHandler[num_threads];
+  rhs = new ReducerHandler<Point4F, float>[num_threads];
   for (int i = 0; i < num_threads; ++i) {
     rhs[i].Init(batch_num);
   }
@@ -101,7 +100,7 @@ void InitReducer(const int num_threads, const int leaf_size,
 
 void SetQueryPoints(const int tid, const void* query_points,
                     const int num_query) {
-  host_query_point_ref = static_cast<const float*>(query_points);
+  host_query_point_ref = static_cast<const Point4F*>(query_points);
 
   rhs[tid].nn_results.reserve(kNumStreams);
   rhs[tid].nn_results.emplace_back(num_query);
@@ -112,8 +111,6 @@ void SetQueryPoints(const int tid, const void* query_points,
 }
 
 void SetNodeTables(const void* usm_leaf_node_table, const int num_leaf_nodes) {
-  // sdata.usm_leaf_node_table = static_cast<const float*>(usm_leaf_node_table);
-
   internal::RegisterLeafNodeTable(usm_leaf_node_table, num_leaf_nodes);
 }
 
@@ -150,17 +147,19 @@ void rt::ExecuteCurrentBufferAsync(int tid, int num_batch_collected) {
   rhs[tid].cur_collecting = next_stream;
 }
 
-void rt::ExecuteBuffer(int tid, int stream_id, int num_batch_collected) {
-  const auto& cb = rhs[tid].CurrentBuffer();
+// void rt::ExecuteBuffer(int tid, int stream_id, int num_batch_collected) {
+//   const auto& cb = rhs[tid].CurrentBuffer();
 
-  internal::ProcessNnBuffer(
-      cb.query_point.data(), cb.query_idx.data(), cb.leaf_idx.data(), nullptr,
-      rhs[tid].CurrentResult().results.data(), num_batch_collected, stream_id);
+//   internal::ProcessNnBuffer(
+//       cb.query_point.data(), cb.query_idx.data(), cb.leaf_idx.data(),
+//       nullptr, rhs[tid].CurrentResult().results.data(), num_batch_collected,
+//       stream_id);
 
-  internal::DeviceSynchronize();
+//   internal::DeviceSynchronize();
 
-  for (int i = 0; i < 6; ++i)
-    std::cout << "Result: " << rhs[tid].CurrentResult().results[i] << std::endl;
-}
+//   for (int i = 0; i < 6; ++i)
+//     std::cout << "Result: " << rhs[tid].CurrentResult().results[i] <<
+//     std::endl;
+// }
 
 }  // namespace redwood
