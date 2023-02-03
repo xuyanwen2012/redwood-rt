@@ -17,7 +17,6 @@ int main() {
   std::cout << "\tN: " << n << '\n';
   std::cout << "\tM: " << m << '\n';
   std::cout << "\tLeaf Size: " << leaf_size << '\n';
-  // std::cout << "\tNum Threads: " << num_threads << '\n';
   std::cout << std::endl;
 
   redwood::InitReducer(1, leaf_size, 1024, 1);
@@ -34,7 +33,6 @@ int main() {
 
   const auto num_leaf_nodes = kdt.GetStats().num_leaf_nodes;
   redwood::UsmVector<Point4F> leaf_node_table(num_leaf_nodes * leaf_size);
-
   kdt.LoadPayload(leaf_node_table.data());
   redwood::SetNodeTables(leaf_node_table.data(), num_leaf_nodes);
 
@@ -52,7 +50,10 @@ int main() {
 
   redwood::rt::ExecuteCurrentBufferAsync(tid, 6);
 
-  // redwood::GetReductionResult(tid, 0, )
+  float result = 666.6f;
+  redwood::GetReductionResult(tid, 0, &result);
+
+  std::cout << "Result: " << result << std::endl;
 
   redwood::EndReducer();
 

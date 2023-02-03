@@ -4,7 +4,7 @@
 
 #include "../Kernel.hpp"
 #include "CudaUtils.cuh"
-#include "KernelFuncs.cuh"
+#include "KernelFunc.cuh"
 #include "cuda_runtime.h"
 
 // I think I can assume there is only 2 streams
