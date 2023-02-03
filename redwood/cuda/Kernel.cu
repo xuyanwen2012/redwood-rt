@@ -25,6 +25,8 @@ __global__ void CudaWarmup() {
 
 namespace redwood::internal {
 
+void BackendInitialization() {}
+
 void DeviceWarmUp() {
   CudaWarmup<<<1, 1024>>>();
   HANDLE_ERROR(cudaDeviceSynchronize());

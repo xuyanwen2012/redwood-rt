@@ -4,6 +4,7 @@
 
 namespace redwood::internal {
 
+void BackendInitialization();
 void DeviceWarmUp();
 
 void DeviceSynchronize();
