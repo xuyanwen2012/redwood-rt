@@ -23,7 +23,7 @@ int main() {
   const auto [in_data, n] = LoadData<Point4F>("../../data/in_4f.dat");
   const auto [q_data, m] = LoadData<Point4F>("../../data/q_4f.dat");
 
-  const auto leaf_size = 32;
+  const auto leaf_size = 32;  // TODO: argument
   const auto num_batches = 1024;
 
   std::cout << "Simulation Parameters" << '\n';
@@ -43,11 +43,11 @@ int main() {
   std::cout << "Building KD Tree... " << '\n';
 
   const kdt::KdtParams params{leaf_size};
-  // kdt::KdTree kdt(params, in_data, n);
   auto kdt = std::make_shared<kdt::KdTree>(params, in_data, n);
 
   // Load leaf node data into USM
   const auto num_leaf_nodes = kdt->GetStats().num_leaf_nodes;
+
   redwood::UsmVector<Point4F> leaf_node_table(num_leaf_nodes * leaf_size);
   kdt->LoadPayload(leaf_node_table.data());
   redwood::SetNodeTables(leaf_node_table.data(), num_leaf_nodes);

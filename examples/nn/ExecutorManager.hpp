@@ -91,7 +91,7 @@ struct DummyExecutor {
 };
 
 class NnExecutor {
-public:
+ public:
   NnExecutor() = delete;
   NnExecutor(const int tid) : tid_(tid), state_(ExecutionState::kFinished) {
     stack_.reserve(16);
@@ -115,13 +115,12 @@ public:
 
   void Resume() { Execute(); }
 
-private:
+ private:
   // TODO: In future, this function will need to be code generated from our DSL
   void Execute() {
     constexpr auto kernel_func = MyFunctorHost();
 
-    if (state_ == ExecutionState::kWorking)
-      goto my_resume_point;
+    if (state_ == ExecutionState::kWorking) goto my_resume_point;
 
     state_ = ExecutionState::kWorking;
     cur_ = tree_ref->root_;
@@ -131,7 +130,6 @@ private:
       // Traverse all the way to left most leaf node
       while (cur_ != nullptr) {
         if (cur_->IsLeaf()) {
-          // redwood::ReduceLeafNodeWithTask(0, cur_->uid, &task_);
           redwood::ReduceLeafNode(tid_, cur_->uid, my_query_idx_);
 
           // **** Coroutine Reuturn ****
@@ -204,7 +202,7 @@ private:
   ExecutionState state_;
   kdt::Node *cur_;
 
-  float *cached_result_addr_; // a pointer to the USM of 1 float
+  float *cached_result_addr_;  // a pointer to the USM of 1 float
 };
 
 // Each CPU thread should have one instance of a manager, each manager takes a
@@ -220,15 +218,17 @@ private:
 
 // template <typename T, typename ExecutorT>
 class ExecutorManager {
-public:
+ public:
   ExecutorManager() = delete;
 
   ExecutorManager(const std::shared_ptr<kdt::KdTree> tree,
                   const Point4F *query_points,
-                  const int *query_idx, // basically uid for each query
+                  const int *query_idx,  // basically uid for each query
                   const int my_m, const int num_batches, const int tid = 0)
-      : tid_(tid), tasks_list_(query_points, query_idx, my_m),
-        executors_(2 * num_batches, tid), num_batches_(num_batches) {
+      : tid_(tid),
+        tasks_list_(query_points, query_idx, my_m),
+        executors_(2 * num_batches, tid),
+        num_batches_(num_batches) {
     // Save reference to
     if (!tree_ref) {
       std::cout << "[DEBUG] kdt::KdTree Reference Set!" << std::endl;
@@ -267,7 +267,7 @@ public:
     std::cout << "Manager (" << tid_ << ") has ended.\n";
   }
 
-private:
+ private:
   int tid_;
 
   TaskList tasks_list_;
