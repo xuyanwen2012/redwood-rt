@@ -93,6 +93,8 @@ void rt::ExecuteCurrentBufferAsync(int tid, int num_batch_collected) {
   const auto& cb = rhs[tid].CurrentBuffer();
   const auto current_stream = rhs[tid].cur_collecting;
 
+  // Application specific
+  // TODO: Make it decoupled
   internal::ProcessNnBuffer(
       cb.query_point.data(), cb.query_idx.data(), cb.leaf_idx.data(),
       rhs[tid].CurrentResult().results.data(), num_batch_collected,

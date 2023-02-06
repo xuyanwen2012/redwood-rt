@@ -41,7 +41,7 @@ struct Node {
 
   Node *left_child;
   Node *right_child;
-  int uid; // In this version this is used only for leaf nodes.
+  int uid;  // In this version this is used only for leaf nodes.
 };
 
 struct KdtParams {
@@ -69,7 +69,7 @@ struct KdtStatistic {
 class KdTree {
   using T = Point4F;
 
-public:
+ public:
   KdTree() = delete;
 
   explicit KdTree(const KdtParams params, const T *in_data, const int n)
@@ -116,7 +116,7 @@ public:
                        const int depth) {
     const auto node = new Node;
 
-    if (right_idx - left_idx <= (int)params_.leaf_max_size) // minimum is 1
+    if (right_idx - left_idx <= (int)params_.leaf_max_size)  // minimum is 1
     {
       ++statistic_.num_leaf_nodes;
       statistic_.max_depth = std::max(depth, statistic_.max_depth);
@@ -200,4 +200,4 @@ public:
   KdtStatistic statistic_;
 };
 
-} // namespace kdt
+}  // namespace kdt
