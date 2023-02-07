@@ -1,17 +1,27 @@
 # Accelerator Backends
 
-## CPU
+## APIs
+
+There are some APIs must be implemented for each new backends. 
+
+* Everything in `include/accelerator/Core.hpp`
+* Everything in `include/accelerator/Usm.hpp`
+* Something in `include/accelerator/Kernels.hpp`
+
+## Backends
+
+### CPU
 
 Note the CPU backend is only for testing application and Debugging library, it is not an actual CPU accelerator. 
 
-## CUDA
+### CUDA
 
 For NVIDIA GPUs, in particular, the **Jetson** Series. 
 
-## SYCL 
+### SYCL 
 
 For Intel GPUs
 
-## Duet
+### Duet
 
 The Duet FPGA, must run with Gem5 Simulator
