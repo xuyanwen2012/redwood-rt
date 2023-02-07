@@ -19,7 +19,8 @@ void AttachStreamMem(int stream_id, void* addr);
 
 // Specific to NN (Naive version)
 // Note: NN <Point4F, Point4F, float>
-void ProcessNnBuffer(const void* query_points, const int* query_idx,
+void ProcessNnBuffer(const Point4F* query_points,
+                     const Point4F* leaf_node_table, const int* query_idx,
                      const int* leaf_idx, float* out, int num,
                      int leaf_max_size, int stream_id);
 

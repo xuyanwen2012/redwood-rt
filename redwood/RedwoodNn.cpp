@@ -39,6 +39,7 @@ struct ReducerHandler {
 // ------------------- Global Shared  -------------------
 
 const Point4F* host_query_point_ref;
+const Point4F* usm_leaf_node_table_ref;
 ReducerHandler<Point4F, float>* rhs;
 
 // ------------------- Public APIs  -------------------
@@ -70,7 +71,8 @@ void SetQueryPoints(const int tid, const void* query_points,
 }
 
 void SetNodeTables(const void* usm_leaf_node_table, const int num_leaf_nodes) {
-  internal::RegisterLeafNodeTable(usm_leaf_node_table, num_leaf_nodes);
+  usm_leaf_node_table_ref = static_cast<const Point4F*>(usm_leaf_node_table);
+  // internal::RegisterLeafNodeTable(usm_leaf_node_table, num_leaf_nodes);
 }
 
 void ReduceLeafNode(const int tid, const int node_idx, const int query_idx) {
@@ -94,9 +96,9 @@ void rt::ExecuteCurrentBufferAsync(int tid, int num_batch_collected) {
   // Application specific
   // TODO: Make it decoupled
   internal::ProcessNnBuffer(
-      cb.query_point.data(), cb.query_idx.data(), cb.leaf_idx.data(),
-      rhs[tid].CurrentResult().results.data(), num_batch_collected,
-      stored_leaf_size, current_stream);
+      cb.query_point.data(), usm_leaf_node_table_ref, cb.query_idx.data(),
+      cb.leaf_idx.data(), rhs[tid].CurrentResult().results.data(),
+      num_batch_collected, stored_leaf_size, current_stream);
 
   const auto next_stream = (kNumStreams - 1) - current_stream;
   internal::DeviceStreamSynchronize(next_stream);

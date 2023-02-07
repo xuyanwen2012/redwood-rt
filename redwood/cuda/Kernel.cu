@@ -2,14 +2,10 @@
 
 #include <limits>
 
-// #include "../../include/PointCould.hpp"
 #include "../Kernel.hpp"
 #include "CudaUtils.cuh"
-#include "KernelFunc.cuh"
 #include "cuda_runtime.h"
 
-// I think I can assume there is only 2 streams
-constexpr auto kNumStreams = 2;
 cudaStream_t streams[kNumStreams];
 bool stream_created = false;
 
@@ -46,21 +42,6 @@ void AttachStreamMem(const int stream_id, void* addr) {
   }
 
   cudaStreamAttachMemAsync(streams[stream_id], addr);
-}
-
-// Main entry to the NN Kernel
-void ProcessNnBuffer(const void* query_points, const int* query_idx,
-                     const int* leaf_idx, float* out, const int num,
-                     const int leaf_max_size, const int stream_id) {
-  auto my_query_points = static_cast<const Point4F*>(query_points);
-
-  constexpr auto n_blocks = 1u;
-  constexpr auto n_threads = 1024u;
-  constexpr auto smem_size = 0;
-  NaiveProcessNnBuffer<Point4F, Point4F, float>
-      <<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
-          my_query_points, query_idx, leaf_idx, usm_leaf_node_table, out, num,
-          leaf_max_size, MyFunctor());
 }
 
 void DeviceSynchronize() { HANDLE_ERROR(cudaDeviceSynchronize()); }
