@@ -1,6 +1,5 @@
 #pragma once
 
-// #include <algorithm>
 #include <iostream>
 
 // The purpose of this File is just to provide a uniformed vector type for both
@@ -86,6 +85,6 @@ std::ostream& operator<<(std::ostream& os, const Point<Dim, T>& dt) {
 using Point2F = Point<2, float>;
 using Point2D = Point<2, double>;
 using Point3F = Point<3, float>;
+using Point3D = Point<3, double>;
 using Point4F = Point<4, float>;
 using Point4D = Point<4, double>;
-using Point3D = Point<3, double>;

@@ -6,9 +6,15 @@ CU_OBJ   := $(wildcard $(CUDA_DIR)/*.o)
 SYCL_DIR := ../accelerator/sycl
 SYCL_OBJ   := $(wildcard $(SYCL_DIR)/*.o)
 
+CPU_DIR := ../accelerator/cpu
+CPU_OBJ   := $(wildcard $(CPU_DIR)/*.o)
+
 # LIB_OBJ := $(wildcard *.o)
 
 # all: sycl cuda
+
+cpu: RedwoodNn.o
+	ar rcs ../lib/RedwoodCpu.a RedwoodNn.o $(CPU_OBJ)
 
 sycl: RedwoodNn.o
 	ar rcs ../lib/RedwoodSycl.a RedwoodNn.o $(SYCL_OBJ)

@@ -4,6 +4,9 @@ SYCL_LIB_DIR := /home/tsorensen/sycl_workspace/llvm/build/lib
 
 all: cuda
 
+cpu:
+	$(CXX) $(CXXFLAGS) -o cpu.out Main.cpp -I../../include ../../lib/RedwoodCpu.a 
+
 sycl: 
 # Sycl must use DPCPP to link the final binary.
 	$(CXX) $(CXXFLAGS) -c Main.cpp -I../../include
