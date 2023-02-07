@@ -24,11 +24,15 @@ void ProcessNnBuffer(const void* query_points, const int* query_idx,
                      int leaf_max_size, int stream_id);
 
 // Specific to BH (Naive version)
-// Only process on a single query point
+// Only process on a single query point, and 'out' is probabaly a single address
 // Note: BH <Point4F, Point3F, Point3F>
 void ProcessBhBuffer(const Point3F query_point, const Point4F* leaf_node_table,
                      const int* leaf_idx, int num_leaf_collected,
                      const Point4F* branch_data, int num_branch_collected,
                      Point3F* out, int leaf_max_size, int stream_id);
+
+// Some times you need to do CPU finalization for kernels. This function allows
+// it. But most of the time it is empty
+void OnBhBufferFinish(Point3F* result, int stream_id);
 
 }  // namespace redwood::internal

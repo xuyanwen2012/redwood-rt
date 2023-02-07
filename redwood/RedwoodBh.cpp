@@ -3,9 +3,9 @@
 
 #include "../include/PointCloud.hpp"
 #include "../include/Redwood.hpp"
+#include "../include/UsmAlloc.hpp"
 #include "BhBuffer.hpp"
 #include "Kernel.hpp"
-#include "UsmAlloc.hpp"
 
 namespace redwood {
 
@@ -16,7 +16,6 @@ int stored_leaf_size;
 int stored_num_batches;
 int stored_batch_size;
 int stored_num_threads;
-// int stored_num_leaf_nodes
 
 template <typename DataT, typename QueryT, typename ResultT>
 struct ReducerHandler {
@@ -28,7 +27,6 @@ struct ReducerHandler {
 
       internal::AttachStreamMem(i, bh_buffers[i].leaf_nodes.data());
       internal::AttachStreamMem(i, bh_buffers[i].branch_data.data());
-      // internal::AttachStreamMem(i, bh_buffers[i].tmp_results_le.data());
     }
   };
 
@@ -44,6 +42,7 @@ struct ReducerHandler {
 // ------------------- Global Shared  -------------------
 
 const Point3F* host_query_point_ref;
+const Point4F* usm_leaf_node_table_ref;
 
 ReducerHandler<Point4F, Point3F, Point3F>* rhs;
 
@@ -75,11 +74,12 @@ void SetQueryPoints(const int tid, const void* query_points,
 }
 
 void SetNodeTables(const void* usm_leaf_node_table, const int num_leaf_nodes) {
+  usm_leaf_node_table_ref = static_cast<const Point4F*>(usm_leaf_node_table);
   internal::RegisterLeafNodeTable(usm_leaf_node_table, num_leaf_nodes);
 }
 
 void StartQuery(const int tid, const int query_idx) {
-  rhs[tid].CurrentBuffer().SetTask(host_query_point_ref[query_idx]);
+  rhs[tid].CurrentBuffer().SetTask(host_query_point_ref[query_idx], query_idx);
 }
 
 void ReduceLeafNode(const int tid, const int node_idx, const int query_idx) {
@@ -92,8 +92,8 @@ void ReduceBranchNode(int tid, const void* node_element, int query_idx) {
 }
 
 void GetReductionResult(const int tid, const int query_idx, void* result) {
-  auto addr = static_cast<float**>(result);
-  // *addr = &rhs[tid].CurrentResult().results[query_idx];
+  auto addr = static_cast<Point3F**>(result);
+  *addr = &rhs[tid].CurrentResultData()[query_idx];
 }
 
 void EndReducer() { delete[] rhs; }
@@ -104,12 +104,16 @@ void rt::ExecuteCurrentBufferAsync(int tid, int num_batch_collected) {
   const auto& cb = rhs[tid].CurrentBuffer();
   const auto current_stream = rhs[tid].cur_collecting;
 
-  internal::ProcessBhBuffer(cb.my_query, cb.LeafNodeData(), cb.BranchNodeData(),
-                            rhs[tid].CurrentResultData(), num_batch_collected,
-                            stored_leaf_size, current_stream);
+  internal::ProcessBhBuffer(
+      cb.my_query, usm_leaf_node_table_ref, cb.LeafNodeData(),
+      cb.NumLeafsCollected(), cb.BranchNodeData(), cb.NumBranchCollected(),
+      rhs[tid].CurrentResultData(), stored_leaf_size, current_stream);
 
   const auto next_stream = (kNumStreams - 1) - current_stream;
   internal::DeviceStreamSynchronize(next_stream);
+
+  internal::OnBhBufferFinish(rhs[tid].bh_results[next_stream].data(),
+                             next_stream);
 
   rhs[tid].bh_buffers[next_stream].Clear();
   rhs[tid].cur_collecting = next_stream;

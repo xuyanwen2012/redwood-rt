@@ -1,8 +1,10 @@
 #include <iostream>
 #include <random>
+#include <vector>
 
 // Redwood related
 #include "../../redwood/BhBuffer.hpp"
+#include "../../redwood/Kernel.hpp"
 #include "PointCloud.hpp"
 #include "Redwood.hpp"
 #include "UsmAlloc.hpp"
@@ -25,11 +27,15 @@ extern void ProcessBhBuffer(const Point3F query_point,
 }  // namespace redwood
 
 int main() {
-  const auto n = 1024 * 32;
+  // const auto n = 1024 * 32;
   const auto m = 1024;
   const auto batch_size = 1024;
+  const auto leaf_size = 32;
 
-  auto in_data = static_cast<Point4F*>(malloc(n * sizeof(Point4F)));
+  // auto in_data = static_cast<Point4F*>(malloc(n * sizeof(Point4F)));
+
+  redwood::UsmVector<Point4F> leaf_node_table(1024 * leaf_size);
+
   auto q_data = static_cast<Point3F*>(malloc(m * sizeof(Point3F)));
 
   static auto rand_point4f = []() {
@@ -49,16 +55,17 @@ int main() {
     };
   };
 
-  std::generate_n(in_data, n, rand_point4f);
+  std::generate(leaf_node_table.begin(), leaf_node_table.end(), rand_point4f);
   std::generate_n(q_data, m, rand_point3f);
 
   redwood::BhBuffer<Point4F, Point3F, Point3F> bh_pack;
 
   bh_pack.Allocate(batch_size);
 
-  bh_pack.SetTask(q_data[0]);
+  const auto q_idx = 2;
+  bh_pack.SetTask(q_data[q_idx], q_idx);
 
-  for (int i = 0; i < 256; ++i) {
+  for (int i = 0; i < 512; ++i) {
     bh_pack.PushLeaf(i);
   }
 
@@ -66,16 +73,27 @@ int main() {
     bh_pack.PushBranch(rand_point4f());
   }
 
-  Point3F result{};
-  // CpuProcessBhBuffer(bh_pack.my_query, bh_pack.LeafNodeData(),
-  //                    bh_pack.NumLeafsCollected(), bh_pack.BranchNodeData(),
-  //                    bh_pack.NumBranchCollected(), &result, 32, 0);
+  redwood::UsmVector<Point3F> final_result(m);
 
-  redwood::internal::ProcessBhBuffer(
-      bh_pack.my_query, in_data, bh_pack.LeafNodeData(),
-      bh_pack.NumLeafsCollected(), nullptr, 0, &result, 32, 0);
+  redwood::InitReducer(1, leaf_size, 1024, 1024);
 
-  std::cout << result << std::endl;
+  const auto tid = 0;
+
+  redwood::SetQueryPoints(tid, q_data, m);
+  redwood::SetNodeTables(leaf_node_table.data(), 1024);
+
+  redwood::internal::ProcessBhBuffer(bh_pack.my_query, leaf_node_table.data(),
+                                     bh_pack.LeafNodeData(),
+                                     bh_pack.NumLeafsCollected(), nullptr, 0,
+                                     final_result.data() + q_idx, leaf_size, 0);
+
+  redwood::internal::DeviceStreamSynchronize(0);
+
+  redwood::internal::OnBhBufferFinish(final_result.data() + q_idx, 0);
+
+  for (int i = 0; i < 32; ++i) {
+    std::cout << i << ": " << final_result[i] << std::endl;
+  }
 
   return EXIT_SUCCESS;
 }
