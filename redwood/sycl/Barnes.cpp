@@ -51,7 +51,8 @@ namespace redwood::internal {
 void ProcessBhBuffer(const Point3F query_point, const Point4F* leaf_node_table,
                      const int* leaf_idx, const int num_leaf_collected,
                      const Point4F* branch_data, const int num_branch_collected,
-                     Point3F* _, const int leaf_max_size, const int stream_id) {
+                     Point3F* out, const int leaf_max_size,
+                     const int stream_id) {
   std::call_once(flag1, [&] {
     std::cout << "Initialize Intermediate Result for first time" << std::endl;
 
