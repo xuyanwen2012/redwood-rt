@@ -8,6 +8,7 @@
 #include "../KDTree.hpp"
 #include "HostKernelFunc.hpp"
 #include "Redwood.hpp"
+#include "rt/Runtime.hpp"
 
 // Reference to the kd tree
 inline std::shared_ptr<kdt::KdTree> tree_ref;

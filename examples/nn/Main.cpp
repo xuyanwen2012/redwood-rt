@@ -5,6 +5,8 @@
 #include "../LoadFile.hpp"
 #include "ExecutorManager.hpp"
 #include "HostKernelFunc.hpp"
+
+// Redwood related
 #include "PointCloud.hpp"
 #include "Redwood.hpp"
 #include "UsmAlloc.hpp"

@@ -2,13 +2,9 @@
 
 #include <vector>
 
+#include "accelerator/Usm.hpp"
+
 namespace redwood {
-
-namespace internal {
-
-void* UsmAlloc(std::size_t n);
-void UsmDeAlloc(void* ptr);
-}  // namespace internal
 
 template <typename T>
 class UsmAlloc {
@@ -24,12 +20,13 @@ class UsmAlloc {
 
   // must not change name
   value_type* allocate(std::size_t n, const void* = nullptr) {
-    return static_cast<value_type*>(internal::UsmAlloc(n * sizeof(value_type)));
+    return static_cast<value_type*>(
+        accelerator::UsmMalloc(n * sizeof(value_type)));
   }
 
   void deallocate(pointer p, std::size_t n) {
     if (p) {
-      internal::UsmDeAlloc(p);
+      accelerator::UsmFree(p);
     }
   }
 };

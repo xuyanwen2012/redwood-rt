@@ -2,7 +2,7 @@
 
 #include <limits>
 
-#include "../include/UsmAlloc.hpp"
+#include "UsmAlloc.hpp"
 
 namespace redwood {
 

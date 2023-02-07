@@ -1,17 +1,29 @@
 include ../Makefile.inc
 
-OBJ := $(wildcard *.o)
+CUDA_DIR := ../accelerator/cuda
+CU_OBJ   := $(wildcard $(CUDA_DIR)/*.o)
 
-all: sycl cuda
+SYCL_DIR := ../accelerator/sycl
+SYCL_OBJ   := $(wildcard $(SYCL_DIR)/*.o)
 
-sycl: Redwood.o 
-	ar rcs ../lib/RedwoodSycl.a Redwood.o ./sycl/UsmAlloc.o ./sycl/Kernel.o
+# LIB_OBJ := $(wildcard *.o)
 
-cuda: Redwood.o 
-	ar rcs ../lib/RedwoodCuda.a Redwood.o ./cuda/UsmAlloc.o ./cuda/Kernel.o 
+# all: sycl cuda
 
-Redwood.o:
-	$(CXX) $(CXXFLAGS) -c Redwood.cpp 
+sycl: RedwoodNn.o
+	ar rcs ../lib/RedwoodSycl.a RedwoodNn.o $(SYCL_OBJ)
+
+cuda: RedwoodNn.o
+	ar rcs ../lib/RedwoodCuda.a RedwoodNn.o $(CU_OBJ)
+
+# sycl_bh: RedwoodBh.o
+# 	ar rcs ../lib/RedwoodSyclBh.a RedwoodBh.o ./sycl/UsmAlloc.o ./sycl/Kernel.o ./sycl/Barnes.o
+
+# cuda_bh: RedwoodBh.o
+# 	ar rcs ../lib/RedwoodCudaBh.a RedwoodBh.o ./cuda/UsmAlloc.o ./cuda/Kernel.o ./cuda/Barnes.o
+
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -I../include -c $< 
 
 clean:
 	rm -rf *.o
