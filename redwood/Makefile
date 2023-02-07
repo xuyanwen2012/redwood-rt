@@ -3,15 +3,18 @@ include ../Makefile.inc
 CUDA_DIR := ../accelerator/cuda
 CU_OBJ   := $(wildcard $(CUDA_DIR)/*.o)
 
-LIB_OBJ := $(wildcard *.o)
+SYCL_DIR := ../accelerator/sycl
+SYCL_OBJ   := $(wildcard $(SYCL_DIR)/*.o)
 
-all: sycl cuda
+# LIB_OBJ := $(wildcard *.o)
 
-# sycl: RedwoodNn.o
-# 	ar rcs ../lib/RedwoodSycl.a RedwoodNn.o ./sycl/UsmAlloc.o ./sycl/Kernel.o ./sycl/Nn.o
+# all: sycl cuda
 
-cuda: $(LIB_OBJ)
-	ar rcs ../lib/RedwoodCuda.a $(LIB_OBJ) $(CU_OBJ)
+sycl: RedwoodNn.o
+	ar rcs ../lib/RedwoodSycl.a RedwoodNn.o $(SYCL_OBJ)
+
+cuda: RedwoodNn.o
+	ar rcs ../lib/RedwoodCuda.a RedwoodNn.o $(CU_OBJ)
 
 # sycl_bh: RedwoodBh.o
 # 	ar rcs ../lib/RedwoodSyclBh.a RedwoodBh.o ./sycl/UsmAlloc.o ./sycl/Kernel.o ./sycl/Barnes.o

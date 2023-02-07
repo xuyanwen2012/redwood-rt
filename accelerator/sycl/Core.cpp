@@ -1,10 +1,8 @@
-#include "../Kernel.hpp"
-
 #include <CL/sycl.hpp>
 #include <iomanip>
 #include <iostream>
 
-constexpr auto kNumStreams = 2;
+#include "SyclUtils.hpp"
 
 sycl::device device;
 sycl::context ctx;
@@ -40,22 +38,9 @@ void SyclWarmUp(sycl::queue& q) {
   q.wait();
 }
 
-struct MyFunctor {
-  inline float operator()(const Point4F p, const Point4F q) const {
-    auto dist = float();
+namespace redwood::accelerator {
 
-    for (int i = 0; i < 4; ++i) {
-      const auto diff = p.data[i] - q.data[i];
-      dist += diff * diff;
-    }
-
-    return sqrtf(dist);
-  }
-};
-
-namespace redwood::internal {
-
-void BackendInitialization() {
+void Initialization() {
   try {
     device = sycl::device(sycl::gpu_selector_v);
   } catch (const sycl::exception& e) {
@@ -75,10 +60,10 @@ void BackendInitialization() {
 // CUDA Only, Ignore it in SYCL.
 void AttachStreamMem(const int stream_id, void* addr) {}
 
+void DeviceStreamSynchronize(const int stream_id) { qs[stream_id].wait(); }
+
 void DeviceSynchronize() {
   for (int i = 0; i < kNumStreams; ++i) DeviceStreamSynchronize(i);
 }
 
-void DeviceStreamSynchronize(const int stream_id) { qs[stream_id].wait(); }
-
-}  // namespace redwood::internal
+}  // namespace redwood::accelerator
