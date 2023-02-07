@@ -9,8 +9,6 @@ void BackendInitialization();
 void DeviceSynchronize();
 void DeviceStreamSynchronize(int stream_id);
 
-void RegisterLeafNodeTable(const void* leaf_node_table, int num_leaf_nodes);
-
 // CUDA Only
 void AttachStreamMem(int stream_id, void* addr);
 
@@ -31,9 +29,5 @@ void ProcessBhBuffer(const Point3F query_point, const Point4F* leaf_node_table,
                      const int* leaf_idx, int num_leaf_collected,
                      const Point4F* branch_data, int num_branch_collected,
                      Point3F* out, int leaf_max_size, int stream_id);
-
-// Some times you need to do CPU finalization for kernels. This function allows
-// it. But most of the time it is empty
-void OnBhBufferFinish(Point3F* result, int stream_id);
 
 }  // namespace redwood::internal
