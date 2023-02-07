@@ -1,11 +1,13 @@
 #include <array>
 #include <iostream>
 
-#include "../include/PointCloud.hpp"
-#include "../include/Redwood.hpp"
-#include "../include/UsmAlloc.hpp"
 #include "BhBuffer.hpp"
-#include "Kernel.hpp"
+#include "PointCloud.hpp"
+#include "Redwood.hpp"
+#include "UsmAlloc.hpp"
+#include "accelerator/Core.hpp"
+#include "accelerator/Kernels.hpp"
+#include "rt/Runtime.hpp"
 
 namespace redwood {
 
@@ -25,8 +27,8 @@ struct ReducerHandler {
     for (int i = 0; i < kNumStreams; ++i) {
       bh_buffers[i].Allocate(batch_num);
 
-      internal::AttachStreamMem(i, bh_buffers[i].leaf_nodes.data());
-      internal::AttachStreamMem(i, bh_buffers[i].branch_data.data());
+      accelerator::AttachStreamMem(i, bh_buffers[i].leaf_nodes.data());
+      accelerator::AttachStreamMem(i, bh_buffers[i].branch_data.data());
     }
   };
 
@@ -54,7 +56,7 @@ void InitReducer(const int num_threads, const int leaf_size,
   stored_num_threads = num_threads;
   stored_num_batches = batch_num;
 
-  internal::BackendInitialization();
+  accelerator::Initialization();
 
   rhs = new ReducerHandler<Point4F, Point3F, Point3F>[num_threads];
   for (int i = 0; i < num_threads; ++i) {
@@ -69,8 +71,8 @@ void SetQueryPoints(const int tid, const void* query_points,
   rhs[tid].bh_results[0].resize(num_query);
   rhs[tid].bh_results[1].resize(num_query);
 
-  internal::AttachStreamMem(0, rhs[tid].bh_results[0].data());
-  internal::AttachStreamMem(1, rhs[tid].bh_results[1].data());
+  accelerator::AttachStreamMem(0, rhs[tid].bh_results[0].data());
+  accelerator::AttachStreamMem(1, rhs[tid].bh_results[1].data());
 }
 
 void SetNodeTables(const void* usm_leaf_node_table, const int num_leaf_nodes) {
@@ -104,7 +106,7 @@ void rt::ExecuteCurrentBufferAsync(int tid, int num_batch_collected) {
   const auto current_stream = rhs[tid].cur_collecting;
 
   // The current implementation process on query only
-  internal::ProcessBhBuffer(
+  accelerator::LaunchBhKernel(
       cb.my_query, usm_leaf_node_table_ref, cb.LeafNodeData(),
       cb.NumLeafsCollected(), cb.BranchNodeData(), cb.NumBranchCollected(),
       rhs[tid].CurrentResultData(), stored_leaf_size, current_stream);
@@ -112,7 +114,7 @@ void rt::ExecuteCurrentBufferAsync(int tid, int num_batch_collected) {
   std::cout << "DEBUG: " << *rhs[tid].CurrentResultData() << std::endl;
 
   const auto next_stream = (kNumStreams - 1) - current_stream;
-  internal::DeviceStreamSynchronize(next_stream);
+  accelerator::DeviceStreamSynchronize(next_stream);
 
   // TODO: Add another internal call for 'OnProcessFinish'
 

@@ -5,27 +5,28 @@
 #include <cstdlib>
 #include <limits>
 
-#include "../Kernel.hpp"
-#include "CudaUtils.cuh"
+#include "../CudaUtils.cuh"
+#include "accelerator/Kernels.hpp"
 #include "cuda_runtime.h"
 
 namespace cg = cooperative_groups;
 
+// I think I can assume there is only 2 streams
 extern cudaStream_t streams[kNumStreams];
 
-inline __device__ Point3F KernelFunc(const Point4F p, const Point3F q) {
-  const auto dx = p.data[0] - q.data[0];
-  const auto dy = p.data[1] - q.data[1];
-  const auto dz = p.data[2] - q.data[2];
-  const auto dist_sqr = dx * dx + dy * dy + dz * dz + 1e-9f;
-  const auto inv_dist = rsqrtf(dist_sqr);
-  const auto inv_dist3 = inv_dist * inv_dist * inv_dist;
-  const auto with_mass = inv_dist3 * p.data[3];
-  return {dx * with_mass, dy * with_mass, dz * with_mass};
+inline __device__ float KernelFunc(const Point4F p, const Point4F q) {
+  auto dist = float();
+
+  for (int i = 0; i < 4; ++i) {
+    const auto diff = p.data[i] - q.data[i];
+    dist += diff * diff;
+  }
+
+  return sqrtf(dist);
 }
 
 template <typename DataT, typename QueryT, typename ResultT>
-__global__ void NaiveProcessBhBuffer(const QueryT* query_points,
+__global__ void NaiveProcessNnBuffer(const QueryT* query_points,
                                      const int* query_idx, const int* leaf_idx,
                                      const DataT* leaf_node_table, ResultT* out,
                                      const int num, const int leaf_node_size) {
@@ -49,13 +50,13 @@ __global__ void NaiveProcessBhBuffer(const QueryT* query_points,
   out[q_idx] = min(out[q_idx], my_min);
 }
 
-namespace redwood::internal {
+namespace redwood::accelerator {
 
 // Main entry to the NN Kernel
-void ProcessNnBuffer(const Point4F* query_points,
-                     const Point4F* leaf_node_table, const int* query_idx,
-                     const int* leaf_idx, float* out, const int num,
-                     const int leaf_max_size, const int stream_id) {
+void LaunchNnKernel(const Point4F* query_points, const Point4F* leaf_node_table,
+                    const int* query_idx, const int* leaf_idx, float* out,
+                    const int num, const int leaf_max_size,
+                    const int stream_id) {
   constexpr auto n_blocks = 1u;
   constexpr auto n_threads = 1024u;
   constexpr auto smem_size = 0;
@@ -65,4 +66,4 @@ void ProcessNnBuffer(const Point4F* query_points,
           leaf_max_size);
 }
 
-}  // namespace redwood::internal
+}  // namespace redwood::accelerator

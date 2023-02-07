@@ -6,13 +6,18 @@ ARCH = -arch=sm_75
 NVCCFLAGS   += -std=c++14 -O3 -Xptxas -O3 -lnvToolsExt 
 NVCCFLAGS   += $(ARCH)
 
-CU_SRC := $(wildcard *.cu)
+MODULES   := . kernels
+SRC_DIR   := $(addprefix ./,$(MODULES))
+CU_SRC     := $(foreach sdir,$(SRC_DIR),$(wildcard $(sdir)/*.cu))
+
 OBJS := $(patsubst %.cu,%.o,$(CU_SRC))
 
 all: $(OBJS)
 
 %.o: %.cu
-	$(NVCC) $(NVCCFLAGS) -c $<
+	$(NVCC) $(NVCCFLAGS) -I../../include -c $<
 
 clean:
-	rm -rf *.o 
+	rm -rf *.o
+
+.PHONY: clean
