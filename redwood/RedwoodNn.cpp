@@ -72,7 +72,6 @@ void SetQueryPoints(const int tid, const void* query_points,
 
 void SetNodeTables(const void* usm_leaf_node_table, const int num_leaf_nodes) {
   usm_leaf_node_table_ref = static_cast<const Point4F*>(usm_leaf_node_table);
-  // internal::RegisterLeafNodeTable(usm_leaf_node_table, num_leaf_nodes);
 }
 
 void ReduceLeafNode(const int tid, const int node_idx, const int query_idx) {

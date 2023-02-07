@@ -75,7 +75,6 @@ void SetQueryPoints(const int tid, const void* query_points,
 
 void SetNodeTables(const void* usm_leaf_node_table, const int num_leaf_nodes) {
   usm_leaf_node_table_ref = static_cast<const Point4F*>(usm_leaf_node_table);
-  // internal::RegisterLeafNodeTable(usm_leaf_node_table, num_leaf_nodes);
 }
 
 void StartQuery(const int tid, const int query_idx) {
@@ -96,19 +95,7 @@ void GetReductionResult(const int tid, const int query_idx, void* result) {
   *addr = &rhs[tid].CurrentResultData()[query_idx];
 }
 
-void EndReducer() {
-  // const auto tid = 0;
-  // const auto current_stream = rhs[tid].cur_collecting;
-  // const auto next_stream = (kNumStreams - 1) - current_stream;
-  // internal::DeviceStreamSynchronize(next_stream);
-
-  // // Only for Sycl
-  // const auto qx = rhs[tid].bh_buffers[next_stream].my_q_idx;
-  // internal::OnBhBufferFinish(rhs[tid].bh_results[next_stream].data() + qx,
-  //                            next_stream);
-
-  delete[] rhs;
-}
+void EndReducer() { delete[] rhs; }
 
 // ------------------- Developer APIs  -------------------
 
@@ -127,9 +114,7 @@ void rt::ExecuteCurrentBufferAsync(int tid, int num_batch_collected) {
   const auto next_stream = (kNumStreams - 1) - current_stream;
   internal::DeviceStreamSynchronize(next_stream);
 
-  // // // Only for Sycl
-  // internal::OnBhBufferFinish(rhs[tid].bh_results[next_stream].data(),
-  //                            next_stream);
+  // TODO: Add another internal call for 'OnProcessFinish'
 
   rhs[tid].bh_buffers[next_stream].Clear();
   rhs[tid].cur_collecting = next_stream;

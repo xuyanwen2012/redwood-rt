@@ -10,9 +10,6 @@ sycl::device device;
 sycl::context ctx;
 sycl::queue qs[kNumStreams];
 
-// Global variable
-const Point4F* usm_leaf_node_table = nullptr;
-
 void ShowDevice(const sycl::queue& q) {
   // Output platform and device information.
   const auto device = q.get_device();
@@ -75,16 +72,11 @@ void BackendInitialization() {
   SyclWarmUp(qs[0]);
 }
 
-void RegisterLeafNodeTable(const void* leaf_node_table,
-                           const int num_leaf_nodes) {
-  usm_leaf_node_table = static_cast<const Point4F*>(leaf_node_table);
-}
-
 // CUDA Only, Ignore it in SYCL.
 void AttachStreamMem(const int stream_id, void* addr) {}
 
 void DeviceSynchronize() {
-  for (int i = 0; i < kNumStreams; ++i) qs[i].wait();
+  for (int i = 0; i < kNumStreams; ++i) DeviceStreamSynchronize(i);
 }
 
 void DeviceStreamSynchronize(const int stream_id) { qs[stream_id].wait(); }

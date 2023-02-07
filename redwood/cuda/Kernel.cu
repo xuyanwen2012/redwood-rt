@@ -11,7 +11,7 @@ bool stream_created = false;
 
 // Global variable
 // Need to be registered
-const Point4F* usm_leaf_node_table = nullptr;
+// const Point4F* usm_leaf_node_table = nullptr;
 
 __global__ void CudaWarmup() {
   const auto tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -25,11 +25,6 @@ namespace redwood::internal {
 void BackendInitialization() {
   CudaWarmup<<<1, 1024>>>();
   HANDLE_ERROR(cudaDeviceSynchronize());
-}
-
-void RegisterLeafNodeTable(const void* leaf_node_table,
-                           const int num_leaf_nodes) {
-  usm_leaf_node_table = static_cast<const Point4F*>(leaf_node_table);
 }
 
 // CUDA Only
