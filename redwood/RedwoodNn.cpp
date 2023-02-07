@@ -1,9 +1,8 @@
-#include "../include/Redwood.hpp"
-
 #include <array>
 #include <iostream>
 
 #include "../include/PointCloud.hpp"
+#include "../include/Redwood.hpp"
 #include "Kernel.hpp"
 #include "NnBuffer.hpp"
 
@@ -15,7 +14,6 @@ constexpr auto kNumStreams = 2;
 int stored_leaf_size;
 int stored_num_batches;
 int stored_num_threads;
-// int stored_num_leaf_nodes
 
 template <typename QueryT, typename ResultT>
 struct ReducerHandler {
