@@ -107,7 +107,7 @@ void rt::ExecuteCurrentBufferAsync(int tid, int num_batch_collected) {
 
   // The current implementation process on query only
   accelerator::LaunchBhKernel(
-      cb.my_query, usm_leaf_node_table_ref, cb.LeafNodeData(),
+      cb.my_query, cb.my_q_idx, usm_leaf_node_table_ref, cb.LeafNodeData(),
       cb.NumLeafsCollected(), cb.BranchNodeData(), cb.NumBranchCollected(),
       rhs[tid].CurrentResultData(), stored_leaf_size, current_stream);
 
@@ -117,7 +117,6 @@ void rt::ExecuteCurrentBufferAsync(int tid, int num_batch_collected) {
   accelerator::DeviceStreamSynchronize(next_stream);
 
   // TODO: Add another internal call for 'OnProcessFinish'
-
   rhs[tid].bh_buffers[next_stream].Clear();
   rhs[tid].cur_collecting = next_stream;
 }
