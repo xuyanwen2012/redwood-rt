@@ -3,8 +3,8 @@
 #include "CudaUtils.cuh"
 #include "cuda_runtime.h"
 
-namespace redwood::accelerator {
-
+namespace redwood {
+namespace accelerator{
 void* UsmMalloc(std::size_t n) {
   std::cout << "accelerator::UsmMalloc() " << n << std::endl;
   void* tmp;
@@ -17,5 +17,5 @@ void UsmFree(void* ptr) {
     HANDLE_ERROR(cudaFree(ptr));
   }
 }
-
+}
 }  // namespace redwood::accelerator

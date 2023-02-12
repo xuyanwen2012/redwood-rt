@@ -32,40 +32,41 @@ __global__ void NaiveProcessBhBuffer(const QueryT* query_points,
                                      const int num, const int leaf_node_size) {
   const auto tid = blockIdx.x * blockDim.x + threadIdx.x;
 
-  if (tid >= num) return;
+  // if (tid >= num) return;
 
-  // Load all three contents from batch, at index 'tid'
-  const auto query_point = query_points[tid];
-  const auto q_idx = query_idx[tid];
-  const auto leaf_id = leaf_idx[tid];
+  // // Load all three contents from batch, at index 'tid'
+  // const auto query_point = query_points[tid];
+  // const auto q_idx = query_idx[tid];
+  // const auto leaf_id = leaf_idx[tid];
 
-  auto my_min = 9999999.9f;
-  for (int i = 0; i < leaf_node_size; ++i) {
-    const auto dist =
-        KernelFunc(leaf_node_table[leaf_id * leaf_node_size + i], query_point);
+  // auto my_min = 9999999.9f;
+  // for (int i = 0; i < leaf_node_size; ++i) {
+  //   const auto dist =
+  //       KernelFunc(leaf_node_table[leaf_id * leaf_node_size + i], query_point);
 
-    my_min = min(my_min, dist);
-  }
+  //   my_min = min(my_min, dist);
+  // }
 
-  out[q_idx] = min(out[q_idx], my_min);
+  // out[q_idx] = min(out[q_idx], my_min);
 }
 
-namespace redwood::accelerator {
+namespace redwood {
+namespace accelerator {
 
 // Main entry to the NN Kernel
 void LaunchBhKernel(const Point4F* query_points, const Point4F* leaf_node_table,
                     const int* query_idx, const int* leaf_idx, float* out,
                     const int num, const int leaf_max_size,
                     const int stream_id) {
-  constexpr auto n_blocks = 1u;
-  constexpr auto n_threads = 1024u;
-  constexpr auto smem_size = 0;
-  NaiveProcessNnBuffer<Point4F, Point4F, float>
-      <<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
-          query_points, query_idx, leaf_idx, leaf_node_table, out, num,
-          leaf_max_size);
+  // constexpr auto n_blocks = 1u;
+  // constexpr auto n_threads = 1024u;
+  // constexpr auto smem_size = 0;
+  // NaiveProcessNnBuffer<Point4F, Point4F, float>
+  //     <<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
+  //         query_points, query_idx, leaf_idx, leaf_node_table, out, num,
+  //         leaf_max_size);
 }
-
+}
 }  // namespace redwood::accelerator
 
 // #include <cooperative_groups.h>

@@ -2,7 +2,8 @@
 
 #include "../include/PointCloud.hpp"
 
-namespace redwood::accelerator {
+namespace redwood {
+namespace accelerator {
 
 // TODO: these APIs are for demonstration only
 // Need to provide implementations.
@@ -21,5 +22,5 @@ void LaunchBhKernel(const Point3F query_point, int q_idx,
                     int num_leaf_collected, const Point4F* branch_data,
                     int num_branch_collected, Point3F* out, int leaf_max_size,
                     int stream_id);
-
+}
 }  // namespace redwood::accelerator

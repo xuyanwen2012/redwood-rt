@@ -15,7 +15,8 @@ __global__ void CudaWarmup() {
   ib += ia + tid;
 }
 
-namespace redwood::accelerator {
+namespace redwood {
+namespace accelerator {
 
 void Initialization() {
   CudaWarmup<<<1, 1024>>>();
@@ -39,5 +40,5 @@ void DeviceSynchronize() { HANDLE_ERROR(cudaDeviceSynchronize()); }
 void DeviceStreamSynchronize(const int stream_id) {
   HANDLE_ERROR(cudaStreamSynchronize(streams[stream_id]));
 }
-
+}
 }  // namespace redwood::accelerator

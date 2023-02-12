@@ -50,7 +50,8 @@ __global__ void NaiveProcessNnBuffer(const QueryT* query_points,
   out[q_idx] = min(out[q_idx], my_min);
 }
 
-namespace redwood::accelerator {
+namespace redwood {
+namespace accelerator {
 
 // Main entry to the NN Kernel
 void LaunchNnKernel(const Point4F* query_points, const Point4F* leaf_node_table,
@@ -65,5 +66,5 @@ void LaunchNnKernel(const Point4F* query_points, const Point4F* leaf_node_table,
           query_points, query_idx, leaf_idx, leaf_node_table, out, num,
           leaf_max_size);
 }
-
+}
 }  // namespace redwood::accelerator
