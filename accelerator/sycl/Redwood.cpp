@@ -2,15 +2,12 @@
 #include <iomanip>
 #include <iostream>
 
-
-#include "SyclUtils.hpp"
-
 #include "Redwood/Point.hpp"
+#include "SyclUtils.hpp"
 
 sycl::device device;
 sycl::context ctx;
 sycl::queue qs[kNumStreams];
-
 
 void ShowDevice(const sycl::queue& q) {
   // Output platform and device information.
@@ -44,9 +41,8 @@ void SyclWarmUp(sycl::queue& q) {
 
 namespace redwood {
 
-
 void Init() {
- try {
+  try {
     device = sycl::device(sycl::gpu_selector_v);
   } catch (const sycl::exception& e) {
     std::cout << "Cannot select a GPU\n" << e.what() << "\n";
@@ -62,16 +58,14 @@ void Init() {
   SyclWarmUp(qs[0]);
 }
 
-void DeviceStreamSynchronize(const int stream_id) {
-    qs[stream_id].wait();
-}
+void DeviceStreamSynchronize(const int stream_id) { qs[stream_id].wait(); }
 
 void DeviceSynchronize() {
-for (int i = 0; i < kNumStreams; ++i) DeviceStreamSynchronize(i);
- }
+  for (int i = 0; i < kNumStreams; ++i) DeviceStreamSynchronize(i);
+}
 
 void AttachStreamMem(const int stream_id, void* addr) {
-    // No Op
+  // No Op
 }
 
 void* UsmMalloc(std::size_t n) {
@@ -95,9 +89,7 @@ void ComputeOneBatchAsync(const int* u_leaf_indices,  /**/
                           const Point4F* u_lnt_data,  /**/
                           const int* u_lnt_sizes,     /**/
                           const Point4F q,            /**/
-                          const int stream_id) {
-  
-}
+                          const int stream_id) {}
 
 void ProcessKnnAsync(const int* u_leaf_indices,  /**/
                      const Point4F* u_q_points,  /**/
@@ -105,8 +97,6 @@ void ProcessKnnAsync(const int* u_leaf_indices,  /**/
                      float* out,                 /**/
                      const Point4F* u_lnt_data,  /**/
                      const int* u_lnt_sizes,     /**/
-                     const int stream_id) {
+                     const int stream_id) {}
 
-}
-
-}
+}  // namespace redwood
