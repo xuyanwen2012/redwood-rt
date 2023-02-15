@@ -4,9 +4,9 @@
 
 #include "../LeafNodeTable.hpp"
 #include "../NnBuffer.hpp"
-#include "Redwood/Point.hpp"
-#include "Redwood/Kernels.hpp"
 #include "Redwood/Core.hpp"
+#include "Redwood/Kernels.hpp"
+#include "Redwood/Point.hpp"
 
 namespace rdc {
 

@@ -2,6 +2,7 @@
 
 #include <cooperative_groups.h>
 #include <device_launch_parameters.h>
+
 #include <cub/cub.cuh>
 
 #include "Redwood/Point.hpp"

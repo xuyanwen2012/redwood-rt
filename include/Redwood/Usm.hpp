@@ -51,4 +51,4 @@ bool operator!=(const UsmAlloc<T>&, const UsmAlloc<U>&) {
 template <typename T>
 using UsmVector = std::vector<T, redwood::UsmAlloc<T>>;
 
-}
+}  // namespace redwood

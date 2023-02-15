@@ -8,9 +8,9 @@
 #include "../Utils.hpp"
 #include "Kernel.hpp"
 #include "Octree.hpp"
-#include "Redwood/Point.hpp"
 #include "ReducerHandler.hpp"
 #include "Redwood/Core.hpp"
+#include "Redwood/Point.hpp"
 
 struct ExecutorStats {
   int leaf_node_reduced = 0;

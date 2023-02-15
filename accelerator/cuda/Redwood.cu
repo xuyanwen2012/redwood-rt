@@ -1,6 +1,5 @@
-#include "Redwood/Core.hpp"
-
 #include "CudaUtils.cuh"
+#include "Redwood/Core.hpp"
 #include "UserKernels.cuh"
 #include "cuda_runtime.h"
 

@@ -3,7 +3,7 @@
 #include "Point.hpp"
 
 namespace redwood {
-    
+
 // Kernel Related
 // Bh
 void ComputeOneBatchAsync(const int* u_leaf_indices, /**/
@@ -23,4 +23,4 @@ void ProcessKnnAsync(const int* u_leaf_indices, /**/
                      const int* u_lnt_sizes,    /**/
                      int stream_id);
 
-}
+}  // namespace redwood
