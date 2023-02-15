@@ -9,6 +9,7 @@
 #include "HostKernelFunc.hpp"
 #include "Redwood.hpp"
 #include "rt/Runtime.hpp"
+#include "accelerator/Core.hpp"
 
 // Reference to the kd tree
 inline std::shared_ptr<kdt::KdTree> tree_ref;
@@ -94,7 +95,7 @@ struct DummyExecutor {
 class NnExecutor {
  public:
   NnExecutor() = delete;
-  NnExecutor(const int tid) : tid_(tid), state_(ExecutionState::kFinished) {
+  NnExecutor(const int tid) : tid_(tid), my_query_point_(), state_(ExecutionState::kFinished) {
     stack_.reserve(16);
   }
 
@@ -110,7 +111,10 @@ class NnExecutor {
     cur_ = nullptr;
 
     // Basically, ask for a piece of USM from the device
+    // std::cout << "tid: " << tid_ << ": " << query_idx << std::endl;
     redwood::GetReductionResult(tid_, query_idx, &cached_result_addr_);
+    std::cout << "tid: " << tid_ << ": " << query_idx << ". " << "cached_result_addr_ " << cached_result_addr_ << std::endl;
+
     Execute();
   }
 
@@ -245,25 +249,146 @@ class ExecutorManager {
               << std::endl;
   }
 
+
+
+  // void StartTraversals() {
+  //   std::cout << "Manager (" << tid_ << ") started.\n";
+
+  // while (!executors_.empty()) {
+
+  //     auto mid_point = executors_.begin() + executors_.size() / 2;
+  //     for (auto it = executors_.begin(); it != mid_point;) {
+  //       if (!it->Finished()) {
+  //         it->Resume();
+  //         ++it;
+  //         continue;
+  //       }
+
+  //       if (tasks_list_.Done()) {
+  //         it = executors_.erase(it);
+  //         --mid_point;
+  //       } else {
+  //         it->StartQuery(tasks_list_.q_point[tasks_list_.cur],
+  //                       tasks_list_.q_idx[tasks_list_.cur]);
+  //         ++it;
+  //         ++tasks_list_.cur;
+  //       }
+  //     }
+
+  //     redwood::rt::ExecuteCurrentBufferAsync(
+  //         tid_, std::distance(executors_.begin(), mid_point));
+
+  //     for (auto it = mid_point; it != executors_.end();) {
+  //       if (!it->Finished()) {
+  //         it->Resume();
+  //         ++it;
+  //         continue;
+  //       }
+
+  //       if (tasks_list_.Done()) {
+  //         it = executors_.erase(it);
+  //       } else {
+  //         it->StartQuery(tasks_list_.q_point[tasks_list_.cur],
+  //                       tasks_list_.q_idx[tasks_list_.cur]);
+  //         ++it;
+  //         ++tasks_list_.cur;
+  //       }
+  //     }
+
+  //     redwood::rt::ExecuteCurrentBufferAsync(
+  //         tid_, std::distance(mid_point, executors_.end()));
+
+  //   }
+  // }
+
+
+
+  // void StartTraversals() {
+  //   std::cout << "Manager (" << tid_ << ") started.\n";
+
+
+
+
+  // while (!tasks_list.Done()) {
+  // statements
+  // }
+
+
+
+
+//     while (!executors_.empty()) {
+//       // 'mid_point' will be modified
+
+//       std::cout << "11111111111111" << std::endl;
+
+//       auto mid_point = executors_.begin() + executors_.size() / 2;
+
+//       ProcessExecutors<NnExecutor>(executors_, tasks_list_a, executors_.begin(),
+//                                    mid_point);
+      
+//       std::cout << "222222222222222 --" << std::distance(executors_.begin(), mid_point) << std::endl;
+
+
+//       redwood::rt::ExecuteCurrentBufferAsync(
+//           tid_, std::distance(executors_.begin(), mid_point));
+
+//       std::cout << "333333333333" << std::endl;
+
+//       auto end_point = executors_.end();
+//       ProcessExecutors<NnExecutor>(executors_, tasks_list_b, mid_point,
+//                                    end_point);
+
+//       std::cout << "4444444444444444 -- " << std::distance(mid_point, executors_.end()) << std::endl;
+
+//       redwood::rt::ExecuteCurrentBufferAsync(
+//           tid_, std::distance(mid_point, executors_.end()));
+//       std::cout << "555555555555" << std::endl;
+
+//     }
+
+//     // redwood::accelerator::DeviceSynchronize();
+// my_end:
+//     std::cout << "Manager (" << tid_ << ") has ended.\n";
+  // }
+
+
   void StartTraversals() {
     std::cout << "Manager (" << tid_ << ") started.\n";
 
     while (!executors_.empty()) {
       // 'mid_point' will be modified
+
+      std::cout << "11111111111111" << std::endl;
+
       auto mid_point = executors_.begin() + executors_.size() / 2;
       ProcessExecutors<NnExecutor>(executors_, tasks_list_, executors_.begin(),
                                    mid_point);
+      std::cout << "222222222222222 --" << std::distance(executors_.begin(), mid_point) << std::endl;
+
 
       redwood::rt::ExecuteCurrentBufferAsync(
           tid_, std::distance(executors_.begin(), mid_point));
+
+      std::cout << "333333333333" << std::endl;
+
+if (std::distance(executors_.begin(), mid_point) < 1024) {
+goto my_label;
+}
 
       auto end_point = executors_.end();
       ProcessExecutors<NnExecutor>(executors_, tasks_list_, mid_point,
                                    end_point);
 
+      std::cout << "4444444444444444 -- " << std::distance(mid_point, executors_.end()) << std::endl;
+
       redwood::rt::ExecuteCurrentBufferAsync(
           tid_, std::distance(mid_point, executors_.end()));
+      std::cout << "555555555555" << std::endl;
+
     }
+
+my_label:
+    redwood::accelerator::DeviceSynchronize();
 
     std::cout << "Manager (" << tid_ << ") has ended.\n";
   }

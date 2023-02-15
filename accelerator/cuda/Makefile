@@ -1,7 +1,8 @@
 NVCC = "$(shell which nvcc)"
 
+ARCH = -arch=sm_53
 # Toucan 'sm_75', Goose 'sm_53'
-ARCH = -arch=sm_75
+# ARCH = -arch=sm_75
 
 NVCCFLAGS   += -std=c++14 -O3 -Xptxas -O3 -lnvToolsExt 
 NVCCFLAGS   += $(ARCH)
@@ -18,6 +19,6 @@ all: $(OBJS)
 	$(NVCC) $(NVCCFLAGS) -I../../include -c $<
 
 clean:
-	rm -rf *.o
+	rm -rf $(OBJS) *.o
 
 .PHONY: clean

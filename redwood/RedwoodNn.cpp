@@ -87,7 +87,10 @@ void GetReductionResult(const int tid, const int query_idx, void* result) {
   *addr = &rhs[tid].CurrentResult().results[query_idx];
 }
 
-void EndReducer() { delete[] rhs; }
+void EndReducer() { 
+  accelerator::DeviceSynchronize();
+  delete[] rhs; 
+}
 
 // ------------------- Developer APIs  -------------------
 
