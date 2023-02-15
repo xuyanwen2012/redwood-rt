@@ -8,7 +8,7 @@
 #include <iostream>
 
 template <typename T>
-std::pair<T *, size_t> LoadData(const std::string &filename) {
+std::pair<T *, size_t> mmap_file(const std::string &filename) {
   struct stat s;
   stat(filename.c_str(), &s);
 
@@ -26,4 +26,11 @@ std::pair<T *, size_t> LoadData(const std::string &filename) {
   const auto data_size = s.st_size / sizeof(T);
 
   return {map, data_size};
+}
+
+template <typename T>
+void munmap_file(T *data, size_t size) {
+  if (munmap(data, size * sizeof(T)) == -1) {
+    std::cerr << "Failed to munmap file" << std::endl;
+  }
 }

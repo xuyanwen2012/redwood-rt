@@ -2,8 +2,16 @@
 
 #include <chrono>
 #include <iostream>
+#include <random>
 
 #define NO_OP 0
+
+float my_rand(float min = 0.0, float max = 1.0) {
+  // 114514 and 233
+  static thread_local std::mt19937 generator(114514);  // NOLINT(cert-msc51-cpp)
+  std::uniform_real_distribution<float> distribution(min, max);
+  return distribution(generator);
+}
 
 template <typename Func>
 void TimeTask(const std::string& task_name, Func&& f) {
