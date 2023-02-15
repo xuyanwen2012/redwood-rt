@@ -4,6 +4,8 @@ NVCCFLAGS = -std=c++14 -O3 -Xptxas -O3
 INCLUDES := -I../../include/
 INCLUDES += -I./extern/cub-1.17.2/ -I./extern/thrust-1.17.2/
 
+# Toucan 'sm_75', Goose 'sm_53'
+# ARCH = -arch=sm_75
 ARCH = -arch=sm_53
 
 SOURCES = $(wildcard *.cu)
