@@ -1,14 +1,15 @@
 DPCPP = clang++ -fsycl
-
 DPCPPFLAGS += -std=c++17 -Wall -Wunused-result -O3 -DNDEBUG
 
-MODULES   := . kernels
-SRC_DIR   := $(addprefix ./,$(MODULES))
-SRC     := $(foreach sdir,$(SRC_DIR),$(wildcard $(sdir)/*.cpp))
-
+SRC     := $(wildcard *.cpp)
 OBJS := $(patsubst %.cpp,%.o,$(SRC))
 
-all: $(OBJS)
+LIBRARY = libsycl.a
+
+all: $(LIBRARY)
+
+$(LIBRARY): $(OBJS)
+	ar rcs $(LIBRARY) $(OBJS)
 
 %.o: %.cpp
 	$(DPCPP) $(DPCPPFLAGS) -I../../include -c $<
@@ -16,4 +17,3 @@ all: $(OBJS)
 clean:
 	rm -rf *.o
 
-.PHONY: clean
