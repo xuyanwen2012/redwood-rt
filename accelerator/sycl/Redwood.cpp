@@ -178,14 +178,10 @@ void ComputeOneBatchAsync(const int* u_leaf_indices,  /**/
 
                      // Maybe fetch add
                      if (local_id == 0) out[0] += scratch[0];
-                     
                      //  if (local_id == 0) out[group_id] = scratch[0];
 
                      // Use Fetch add ?
                      // https://www.intel.com/content/www/us/en/develop/documentation/oneapi-gpu-optimization-guide/top/kernels/reduction.html
-
-                     // // Results will be pointing to a USM unique to each
-                     // executor. out[0] = my_sum;
                    });
   });
 }
