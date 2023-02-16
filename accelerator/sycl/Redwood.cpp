@@ -11,6 +11,9 @@ sycl::device device;
 sycl::context ctx;
 sycl::queue qs[kNumStreams];
 
+// This is how much you can use on SYCl
+constexpr auto kBlockThreads = 256;
+
 void ShowDevice(const sycl::queue& q) {
   // Output platform and device information.
   const auto device = q.get_device();
@@ -110,6 +113,14 @@ inline float KernelFuncKnn(const Point4F p, const Point4F q) {
   return sqrtf(dist);
 }
 
+template <typename T>
+T MyRoundUp(T num_to_round, T multiple = 32) {
+  T remainder = num_to_round % multiple;
+  if (remainder == 0) return num_to_round;
+
+  return num_to_round + multiple - remainder;
+}
+
 void ComputeOneBatchAsync(const int* u_leaf_indices,  /**/
                           const int num_active_leafs, /**/
                           float* out,                 /**/
@@ -117,21 +128,65 @@ void ComputeOneBatchAsync(const int* u_leaf_indices,  /**/
                           const int* u_lnt_sizes,     /**/
                           const Point4F q,            /**/
                           const int stream_id) {
+  // Alias just to use familiar SYCL terminology
+  const auto data_size = num_active_leafs;
+
+  const auto num_work_items = MyRoundUp(data_size, kBlockThreads);
+  // const auto num_work_items = data_size;
+  const auto num_work_groups = num_work_items / kBlockThreads;
+
+  if (num_work_groups > 1024) {
+    std::cout << "should not happen" << std::endl;
+    exit(1);
+  }
+
   const auto leaf_max_size = 64;
   qs[stream_id].submit([&](sycl::handler& h) {
-    h.parallel_for(sycl::range(num_active_leafs), [=](const sycl::id<1> idx) {
-      const auto leaf_id = u_leaf_indices[idx];
+    // scratch is for each work group.
+    // sycl::accessor<float, 1, sycl::access::mode::read_write,
+    //                sycl::access::target::local>
+    //     scratch(kBlockThreads, h);
 
-      auto my_sum = 0.0f;
-      for (int i = 0; i < leaf_max_size; ++i) {
-        const auto dist =
-            KernelFuncKnn(u_lnt_data[leaf_id * leaf_max_size + i], q);
-        my_sum += dist;
-      }
+    sycl::local_accessor<float, 1> scratch(kBlockThreads, h);
 
-      // Results will be pointing to a USM unique to each executor.
-      out[0] = my_sum;
-    });
+    h.parallel_for(sycl::nd_range<1>(num_work_items, kBlockThreads),
+                   [=](const sycl::nd_item<1> item) {
+                     const auto global_id = item.get_global_id(0);
+                     const auto local_id = item.get_local_id(0);
+                     // const auto group_id = item.get_group(0);
+
+                     if (global_id < data_size) {
+                       const auto leaf_id = u_leaf_indices[global_id];
+                       // const auto leaf_size = leaf_sizes_acc[leaf_id];
+
+                       float my_sum{};
+                       for (int i = 0; i < leaf_max_size; ++i) {
+                         my_sum += KernelFuncBh(
+                             u_lnt_data[leaf_id * leaf_max_size + i], q);
+                       }
+                       scratch[local_id] = my_sum;
+                     } else {
+                       scratch[local_id] = 0.0f;
+                     }
+
+                     // Do a tree reduction on items in work-group
+                     for (int i = kBlockThreads / 2; i > 0; i >>= 1) {
+                       item.barrier(sycl::access::fence_space::local_space);
+                       if (local_id < i)
+                         scratch[local_id] += scratch[local_id + i];
+                     }
+
+                     // Maybe fetch add
+                     if (local_id == 0) out[0] += scratch[0];
+                     
+                     //  if (local_id == 0) out[group_id] = scratch[0];
+
+                     // Use Fetch add ?
+                     // https://www.intel.com/content/www/us/en/develop/documentation/oneapi-gpu-optimization-guide/top/kernels/reduction.html
+
+                     // // Results will be pointing to a USM unique to each
+                     // executor. out[0] = my_sum;
+                   });
   });
 }
 
