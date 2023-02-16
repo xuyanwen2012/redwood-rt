@@ -30,7 +30,7 @@ struct BoundingBox {
 
 template <typename T>
 struct OctreeParams {
-  explicit OctreeParams(const T theta = 0.5, const size_t leaf_size = 32,
+  explicit OctreeParams(const T theta, const size_t leaf_size,
                         const BoundingBox<T> box = BoundingBox<T>::Unit())
       : theta(theta), leaf_max_size(leaf_size), starting_box(box) {
     if (leaf_size == 0) {
@@ -311,9 +311,6 @@ class Octree {
   }
 
   Node<T>* root_;
-
-  //   std::vector<PointT> leaf_node_content_table_;
-  //   std::vector<int> leaf_node_size_table_;
 
   OctreeParams<T> params_;
   OctreeStatistic statistic_;

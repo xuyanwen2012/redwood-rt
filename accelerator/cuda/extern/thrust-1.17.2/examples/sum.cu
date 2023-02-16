@@ -5,7 +5,7 @@
 #include <thrust/functional.h>
 #include <thrust/random.h>
 
-int my_rand(void)
+int MyRand(void)
 {
   static thrust::default_random_engine rng;
   static thrust::uniform_int_distribution<int> dist(0, 9999);
@@ -16,7 +16,7 @@ int main(void)
 {
   // generate random data on the host
   thrust::host_vector<int> h_vec(100);
-  thrust::generate(h_vec.begin(), h_vec.end(), my_rand);
+  thrust::generate(h_vec.begin(), h_vec.end(), MyRand);
 
   // transfer to device and compute sum
   thrust::device_vector<int> d_vec = h_vec;

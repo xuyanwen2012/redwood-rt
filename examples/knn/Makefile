@@ -1,5 +1,21 @@
-CXX = g++
-CXXFLAGS += -std=c++17 -Wall -Wunused-result -O3 -DNDEBUG
+include ../../Makefile.inc
 
-all:
-	$(CXX) $(CXXFLAGS) -o cuda.out Main.cpp ../../accelerator/cuda/libcuda.a -I../../include -L/usr/local/cuda/lib64 -lcudart
+CUDA_LIB := ../../accelerator/cuda/libcuda.a
+SYCL_LIB := ../../accelerator/sycl/libsycl.a
+
+SOURCES = $(wildcard *.cpp)
+OBJECTS = $(SOURCES:.cpp=.o)
+
+all: cuda sycl
+
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c $(SOURCES) -I../../include
+
+cuda: $(OBJECTS)
+	$(CXX) -o  cuda.out $(OBJECTS) $(CUDA_LIB) -L/usr/local/cuda/lib64 -lcudart
+
+sycl: $(OBJECTS)
+	clang++ -fsycl -o sycl.out $(OBJECTS) $(SYCL_LIB) -L$(SYCL_LIB_DIR) -lsycl
+
+clean:
+	rm -f $(OBJECTS) *.out

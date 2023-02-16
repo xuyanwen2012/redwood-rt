@@ -158,7 +158,6 @@ __global__ void CudaKnnDebug(const int* u_leaf_indices,  /**/
                              const Point4F* u_lnt_data,  /**/
                              const int* u_lnt_sizes) {
   constexpr auto kK = 32;
-  // constexpr auto kBufferSize = 1024;
 
   auto cta = cg::this_thread_block();
   const auto tid = cta.thread_rank();

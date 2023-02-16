@@ -152,8 +152,8 @@ int main() {
   std::cout << "Making tasks" << std::endl;
 
   static auto rand_point4f = []() {
-    return Point4F{my_rand(0.0f, 1000.0f), my_rand(0.0f, 1000.0f),
-                   my_rand(0.0f, 1000.0f), 1.0f};
+    return Point4F{MyRand(0.0f, 1000.0f), MyRand(0.0f, 1000.0f),
+                   MyRand(0.0f, 1000.0f), 1.0f};
   };
   const auto m = 32;
   std::queue<Point4F> q_data;

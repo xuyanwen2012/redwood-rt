@@ -65,32 +65,34 @@ struct ReducerHandler {
 
 inline std::array<ReducerHandler, kNumThreads> rhs;
 
-void InitReducers() {
+inline void InitReducers() {
   redwood::Init();
   for (int i = 0; i < kNumThreads; ++i) rhs[i].Init();
 };
 
-void ReleaseReducers() {
+inline void ReleaseReducers() {
   rdc::FreeLeafNodeTalbe();
   for (int i = 0; i < kNumThreads; ++i) rhs[i].Release();
 }
 
-void SetQuery(const int tid, const int stream_id, const Point4F q) {
+inline void SetQuery(const int tid, const int stream_id, const Point4F q) {
   rhs[tid].SetQueryPoint(stream_id, q);
 };
 
-void ReduceLeafNode(const int tid, const int stream_id, const int node_idx) {
+inline void ReduceLeafNode(const int tid, const int stream_id,
+                           const int node_idx) {
   // You can push as many ints as you want.
   rhs[tid].UsmBuffer(stream_id).PushLeaf(node_idx);
 };
 
-void ReduceBranchNode(const int tid, const int stream_id, const Point4F data){};
+inline void ReduceBranchNode(const int tid, const int stream_id,
+                             const Point4F data){};
 
-void ClearBuffer(const int tid, const int stream_id) {
+inline void ClearBuffer(const int tid, const int stream_id) {
   rhs[tid].UsmBuffer(stream_id).Clear();
 };
 
-_NODISCARD const int NextStream(const int stream_id) {
+_NODISCARD inline const int NextStream(const int stream_id) {
   return (kNumStreams - 1) - stream_id;
 };
 
@@ -106,7 +108,7 @@ _NODISCARD T GetResultValueUnchecked(const int tid, const int stream_id) {
   return *GetResultAddr<T>(tid, stream_id);
 }
 
-void LuanchKernelAsync(const int tid, const int stream_id) {
+inline void LuanchKernelAsync(const int tid, const int stream_id) {
   // TODO: Need to select User's kernel
   redwood::ComputeOneBatchAsync(
       rhs[tid].UsmBuffer(stream_id).Data(), /* Buffered data to process */
