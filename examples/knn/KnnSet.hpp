@@ -41,3 +41,21 @@ struct KnnSet {
   // Assume sorted
   T rank[K];
 };
+
+// For Nearest Neighbor
+template <typename T>
+struct KnnSet<T, 1> {
+  void Insert(T value) {
+    if (value < dat) dat = value;
+  }
+
+  void Clear() { dat = std::numeric_limits<float>::max(); }
+
+  _NODISCARD T WorstDist() const { return dat; }
+
+  void DebugPrint(std::ofstream& os) const { os << dat << '\n'; }
+
+  void DebugPrint() const { std::cout << dat << '\n'; }
+
+  T dat;
+};

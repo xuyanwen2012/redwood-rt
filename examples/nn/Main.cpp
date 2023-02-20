@@ -8,9 +8,9 @@
 
 #include "../LoadFile.hpp"
 #include "../Utils.hpp"
-#include "KDTree.hpp"
-#include "Kernel.hpp"
-#include "KnnSet.hpp"
+#include "../knn/KnnSet.hpp"
+#include "../knn/KDTree.hpp"
+#include "../knn/Kernel.hpp"
 #include "ReducerHandler.hpp"
 #include "Redwood/Core.hpp"
 
@@ -24,8 +24,6 @@ struct CallStackField {
   float train;
   kdt::Dir dir;
 };
-
-constexpr auto kK = 32;
 
 // Knn Algorithm
 class Executor {
@@ -45,7 +43,7 @@ class Executor {
 
     // When created,
     float* base_addr = rdc::GetResultAddr<float>(my_tid_, my_stream_id_);
-    u_my_result_addr_ = base_addr + my_id * kK;
+    u_my_result_addr_ = base_addr + my_id;
 
     // std::cout << "\tCreated " << my_id << ": at addr " << u_my_result_addr_
     //           << std::endl;
@@ -151,7 +149,7 @@ class Executor {
  public:
   // Pointer to the USM address requested from the Backend.
   union {
-    KnnSet<float, kK>* k_set_;
+    KnnSet<float, 1>* k_set_;
     float* u_my_result_addr_;
   };
 
@@ -171,21 +169,16 @@ class Executor {
 class CpuExecutor {
  public:
   CpuExecutor(const int tid) : my_tid_(tid) {
-    h_my_result_ = static_cast<float*>(malloc(kK * sizeof(float)));
   }
-
-  ~CpuExecutor() { free(h_my_result_); }
 
   void StartQuery(const Point4F q) {
     my_query_point_ = q;
-    k_set_->Clear();
+    k_set_.Clear();
     TraversalRecursive(tree_ref->GetRoot());
   }
 
-  union {
-    KnnSet<float, kK>* k_set_;
-    float* h_my_result_;
-  };
+    KnnSet<float, 1> k_set_;
+
 
  private:
   void TraversalRecursive(const kdt::Node* cur) {
@@ -195,7 +188,7 @@ class CpuExecutor {
       const auto leaf_addr = rdc::LntDataAddrAt(cur->uid);
       for (int i = 0; i < tree_ref->GetParams().leaf_max_size; ++i) {
         const float dist = KernelFunc(leaf_addr[i], my_query_point_);
-        k_set_->Insert(dist);
+        k_set_.Insert(dist);
       }
 
     } else {
@@ -204,7 +197,7 @@ class CpuExecutor {
           tree_ref->v_acc_[cur->node_type.tree.idx_mid];
       const float dist =
           KernelFunc(tree_ref->in_data_ref_[accessor_idx], my_query_point_);
-      k_set_->Insert(dist);
+      k_set_.Insert(dist);
 
       // **********************************
 
@@ -220,7 +213,7 @@ class CpuExecutor {
       a.data[axis] = my_query_point_.data[axis];
       b.data[axis] = train;
       const auto diff = KernelFunc(a, b);
-      if (diff < k_set_->WorstDist()) {
+      if (diff < k_set_.WorstDist()) {
         TraversalRecursive(cur->GetChild(FlipDir(dir)));
       }
     }
@@ -290,7 +283,7 @@ int main() {
 
     exe.StartQuery(q);
 
-    exe.k_set_->DebugPrint();
+    exe.k_set_.DebugPrint();
 
   } else {
     // Use redwood runtime
