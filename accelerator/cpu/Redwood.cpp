@@ -6,10 +6,9 @@
 
 namespace redwood {
 
-void Init() {
-}
+void Init() {}
 
-void DeviceStreamSynchronize(const int stream_id) { 
+void DeviceStreamSynchronize(const int stream_id) {
   // No Op
 }
 
@@ -60,7 +59,7 @@ inline float KernelFuncKnn(const Point4F p, const Point4F q) {
 
 // Naive
 inline float SumLeaf(const Point4F q_point, const Point4F* base,
-                       const int leaf_max_size) {
+                     const int leaf_max_size) {
   float acc{};
   for (int i = 0; i < leaf_max_size; ++i) acc += KernelFuncBh(base[i], q_point);
   return acc;
@@ -77,8 +76,7 @@ void ComputeOneBatchAsync(const int* u_leaf_indices,  /**/
   for (int i = 0; i < num_active_leafs; ++i) {
     const auto leaf_id = u_leaf_indices[i];
 
-    auto acc = SumLeaf(q, u_lnt_data + leaf_id * leaf_max_size,
-                       leaf_max_size);
+    auto acc = SumLeaf(q, u_lnt_data + leaf_id * leaf_max_size, leaf_max_size);
 
     *out += acc;
   }
@@ -90,8 +88,6 @@ void ProcessKnnAsync(const int* u_leaf_indices,  /**/
                      float* out,                 /**/
                      const Point4F* u_lnt_data,  /**/
                      const int* u_lnt_sizes,     /**/
-                     const int stream_id) {
-
-}
+                     const int stream_id) {}
 
 }  // namespace redwood
