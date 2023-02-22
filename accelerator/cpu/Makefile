@@ -1,10 +1,9 @@
-DPCPP = clang++ -fsycl
-DPCPPFLAGS += -std=c++17 -Wall -Wunused-result -O3 -DNDEBUG
+include ../../Makefile.inc
 
 SRC     := $(wildcard *.cpp)
 OBJS := $(patsubst %.cpp,%.o,$(SRC))
 
-LIBRARY = libsycl.a
+LIBRARY = libcpu.a
 
 all: $(LIBRARY)
 
@@ -12,7 +11,7 @@ $(LIBRARY): $(OBJS)
 	ar rcs $(LIBRARY) $(OBJS)
 
 %.o: %.cpp
-	$(DPCPP) $(DPCPPFLAGS) -I../../include -c $<
+	$(CXX) $(CXXFLAGS) -I../../include -c $<
 
 clean:
 	rm -rf *.o
