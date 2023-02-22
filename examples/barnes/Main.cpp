@@ -137,7 +137,7 @@ int main(int argc, char** argv) {
   };
 
   const oct::OctreeParams<float> params{theta, leaf_size, universe};
-  oct::Octree<float> tree(in, n, params);
+  oct::Octree<float> tree(in, static_cast<int>(n), params);
 
   tree.BuildTree();
 

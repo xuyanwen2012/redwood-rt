@@ -22,7 +22,7 @@ inline void AllocateLeafNodeTable(const int num_leaf_nodes, const int leaf_size,
 
   lnt.leaf_size = leaf_size;
   lnt.use_sizes = use_sizes;
-};
+}
 
 inline void FreeLeafNodeTalbe() {
   redwood::UsmFree(lnt.u_data);

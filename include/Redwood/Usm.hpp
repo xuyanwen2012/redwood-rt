@@ -9,7 +9,7 @@ void* UsmMalloc(std::size_t n);
 template <typename T>
 T* UsmMalloc(std::size_t n) {
   return static_cast<T*>(UsmMalloc(n * sizeof(T)));
-};
+}
 
 void UsmFree(void* ptr);
 

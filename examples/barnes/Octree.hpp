@@ -32,13 +32,13 @@ template <typename T>
 struct OctreeParams {
   explicit OctreeParams(const T theta, const size_t leaf_size,
                         const BoundingBox<T> box = BoundingBox<T>::Unit())
-      : theta(theta), leaf_max_size(leaf_size), starting_box(box) {
+      : theta_val(theta), leaf_max_size(leaf_size), starting_box(box) {
     if (leaf_size == 0) {
       throw std::runtime_error("Error: 'leaf_size' must be above zero. ");
     }
   }
 
-  T theta;
+  T theta_val;
   size_t leaf_max_size;
   BoundingBox<T> starting_box;
 };

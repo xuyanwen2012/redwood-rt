@@ -68,7 +68,7 @@ inline std::array<ReducerHandler, kNumThreads> rhs;
 inline void InitReducers() {
   redwood::Init();
   for (int i = 0; i < kNumThreads; ++i) rhs[i].Init();
-};
+}
 
 inline void ReleaseReducers() {
   rdc::FreeLeafNodeTalbe();
@@ -77,24 +77,24 @@ inline void ReleaseReducers() {
 
 inline void SetQuery(const int tid, const int stream_id, const Point4F q) {
   rhs[tid].SetQueryPoint(stream_id, q);
-};
+}
 
 inline void ReduceLeafNode(const int tid, const int stream_id,
                            const int node_idx) {
   // You can push as many ints as you want.
   rhs[tid].UsmBuffer(stream_id).PushLeaf(node_idx);
-};
+}
 
 inline void ReduceBranchNode(const int tid, const int stream_id,
                              const Point4F data){};
 
 inline void ClearBuffer(const int tid, const int stream_id) {
   rhs[tid].UsmBuffer(stream_id).Clear();
-};
+}
 
-_NODISCARD inline const int NextStream(const int stream_id) {
+_NODISCARD inline int NextStream(const int stream_id) {
   return (kNumStreams - 1) - stream_id;
-};
+}
 
 // Mostly for KNN
 template <typename T>
@@ -112,7 +112,7 @@ inline void LuanchKernelAsync(const int tid, const int stream_id) {
   // TODO: Need to select User's kernel
   redwood::ComputeOneBatchAsync(
       rhs[tid].UsmBuffer(stream_id).Data(), /* Buffered data to process */
-      rhs[tid].UsmBuffer(stream_id).Size(), /* / */
+      static_cast<int>(rhs[tid].UsmBuffer(stream_id).Size()), /* / */
       rhs[tid].UsmResultAddr(stream_id),    /* Return Addr */
       rdc::LntDataAddr(),                   /* Shared data */
       nullptr,                              /* Ignore for now */

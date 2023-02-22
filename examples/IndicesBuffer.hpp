@@ -22,7 +22,7 @@ struct IndicesBuffer {
     leaf_nodes.clear();
   }
 
-  _NODISCARD const int* Data() const { return leaf_nodes.data(); };
+  _NODISCARD const int* Data() const { return leaf_nodes.data(); }
 
   void PushLeaf(const int leaf_id) { leaf_nodes.push_back(leaf_id); }
 
