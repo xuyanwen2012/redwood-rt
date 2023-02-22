@@ -309,7 +309,6 @@ int main(int argc, char** argv) {
       // ++it) {
       for (auto& exe : exe[cur_stream]) {
         if (exe.Finished()) {
-
           std::cout << exe.k_set_->WorstDist() << std::endl;
 
           // Make there is task in the queue
@@ -332,11 +331,11 @@ int main(int argc, char** argv) {
       redwood::DeviceStreamSynchronize(next);
 
       // We could get results now
-      //const auto result = rdc::GetResultValueUnchecked<float>(tid, next);
+      // const auto result = rdc::GetResultValueUnchecked<float>(tid, next);
       // exe
 
       // Todo: this q_idx is not true, should be the last one
-      //final_results.push_back(result);
+      // final_results.push_back(result);
 
       // Switch buffer ( A->B, B-A)
       cur_stream = next;

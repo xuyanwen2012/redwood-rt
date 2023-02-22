@@ -149,8 +149,8 @@ int main(int argc, char** argv) {
 
   // Now octree tree is comstructed, need to move leaf node data into USM
   const auto num_leaf_nodes = tree.GetStats().num_leaf_nodes;
-  rdc::AllocateLeafNodeTable(num_leaf_nodes, leaf_size, true);
 
+  rdc::AllocateLeafNodeTable(num_leaf_nodes, leaf_size, true);
   tree.LoadPayload(rdc::LntDataAddr(), rdc::LntSizesAddr());
 
   munmap_file(in, n);
