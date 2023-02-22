@@ -1,23 +1,25 @@
-NVCC = "$(shell which nvcc)"
+NVCC = $(shell which nvcc)
+NVCCFLAGS = -std=c++14 -O3 -Xptxas -O3 
+
+INCLUDES := -I../../include/
+INCLUDES += -I./extern/cub-1.17.2/ -I./extern/thrust-1.17.2/
 
 # Toucan 'sm_75', Goose 'sm_53'
-ARCH = -arch=sm_75
+# ARCH = -arch=sm_75
+ARCH = -arch=sm_53
 
-NVCCFLAGS   += -std=c++14 -O3 -Xptxas -O3 -lnvToolsExt 
-NVCCFLAGS   += $(ARCH)
+SOURCES = $(wildcard *.cu)
+OBJECTS = $(SOURCES:.cu=.o)
 
-MODULES   := . kernels
-SRC_DIR   := $(addprefix ./,$(MODULES))
-CU_SRC     := $(foreach sdir,$(SRC_DIR),$(wildcard $(sdir)/*.cu))
+LIBRARY = libcuda.a
 
-OBJS := $(patsubst %.cu,%.o,$(CU_SRC))
+all: $(LIBRARY)
 
-all: $(OBJS)
+$(LIBRARY): $(OBJECTS)
+	ar rcs $(LIBRARY) $(OBJECTS)
 
 %.o: %.cu
-	$(NVCC) $(NVCCFLAGS) -I../../include -c $<
+	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $(ARCH) -c $< -o $@
 
 clean:
-	rm -rf *.o
-
-.PHONY: clean
+	rm -f $(OBJECTS) $(LIBRARY)
