@@ -112,11 +112,18 @@ class Executor {
 
 float Executor::theta_ = 0.2f;
 
-int main() {
+int main(int argc, char** argv) {
+
+  if (argc < 2) {
+    std::cerr << "requires an input file (\"data/input_bh_2m_4f.dat\")";
+    return -1;
+  }
+
+  const char* data_file = argv[1];
   const auto leaf_size = 64;
   const auto theta = 0.2f;
 
-  const auto [in, n] = mmap_file<Point4F>("../data/input_bh_2m_4f.dat");
+  const auto [in, n] = mmap_file<Point4F>(data_file);
 
   // Inspect input data is correct
   for (int i = 0; i < 10; ++i) {
