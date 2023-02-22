@@ -115,7 +115,7 @@ float Executor::theta_ = 0.2f;
 int main(int argc, char** argv) {
 
   if (argc < 2) {
-    std::cerr << "requires an input file (\"data/input_bh_2m_4f.dat\")";
+    std::cerr << "requires an input file (\"data/input_bh_2m_4f.dat\")\n";
     return -1;
   }
 

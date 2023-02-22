@@ -13,12 +13,12 @@ else()
   message(SEND_ERROR "Unspported platform")
 endif()
 
-add_library(redwood_cpu STATIC
-  accelerator/cpu/Redwood.cpp
-)
+# e.g. "cpu;cpu1" no trailing semicolon
+set(BACKENDS "" CACHE STRING "List of backends to compile")
 
-target_include_directories(redwood_cpu PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
+if(BACKENDS STREQUAL "")
+  message(FATAL_ERROR "Must specify at least one backend (e.g. -DBACKENDS=\"cpu;cpu1\")")
+endif()
 
+add_subdirectory(accelerator)
 add_subdirectory(examples)
