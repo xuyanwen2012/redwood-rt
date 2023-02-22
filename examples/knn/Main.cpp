@@ -230,11 +230,18 @@ class CpuExecutor {
   const int my_tid_;
 };
 
-int main() {
+int main(int argc, char** argv) {
+  if (argc < 2) {
+    std::cerr << "requires an input file (\"data/input_nn_1m_4f.dat\")\n";
+    return EXIT_FAILURE;
+  }
+
+  const char* data_file = argv[1];
+
   const auto leaf_size = 96;
   const auto batch_size = 32;
 
-  const auto [in, n] = mmap_file<Point4F>("../data/input_nn_1m_4f.dat");
+  const auto [in, n] = mmap_file<Point4F>(data_file);
 
   // Inspect input data is correct
   for (int i = 0; i < 10; ++i) {

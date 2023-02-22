@@ -8,9 +8,9 @@
 
 #include "../LoadFile.hpp"
 #include "../Utils.hpp"
-#include "../knn/KnnSet.hpp"
 #include "../knn/KDTree.hpp"
 #include "../knn/Kernel.hpp"
+#include "../knn/KnnSet.hpp"
 #include "ReducerHandler.hpp"
 #include "Redwood/Core.hpp"
 
@@ -168,8 +168,7 @@ class Executor {
 
 class CpuExecutor {
  public:
-  CpuExecutor(const int tid) : my_tid_(tid) {
-  }
+  CpuExecutor(const int tid) : my_tid_(tid) {}
 
   void StartQuery(const Point4F q) {
     my_query_point_ = q;
@@ -177,8 +176,7 @@ class CpuExecutor {
     TraversalRecursive(tree_ref->GetRoot());
   }
 
-    KnnSet<float, 1> k_set_;
-
+  KnnSet<float, 1> k_set_;
 
  private:
   void TraversalRecursive(const kdt::Node* cur) {
@@ -223,11 +221,17 @@ class CpuExecutor {
   const int my_tid_;
 };
 
-int main() {
+int main(int argc, char** argv) {
+  if (argc < 2) {
+    std::cerr << "requires an input file (\"data/input_nn_1m_4f.dat\")\n";
+    return EXIT_FAILURE;
+  }
+
+  const char* data_file = argv[1];
   const auto leaf_size = 96;
   const auto batch_size = 32;
 
-  const auto [in, n] = mmap_file<Point4F>("../data/input_nn_1m_4f.dat");
+  const auto [in, n] = mmap_file<Point4F>(data_file);
 
   // Inspect input data is correct
   for (int i = 0; i < 10; ++i) {
@@ -273,6 +277,9 @@ int main() {
   //
   constexpr int tid = 0;
 
+  std::vector<float> final_results;
+  final_results.reserve(m + 1);  // need to discard the first
+
   if constexpr (constexpr auto cpu = false; cpu) {
     // Just CPU traversal
 
@@ -302,6 +309,9 @@ int main() {
       // ++it) {
       for (auto& exe : exe[cur_stream]) {
         if (exe.Finished()) {
+
+          std::cout << exe.k_set_->WorstDist() << std::endl;
+
           // Make there is task in the queue
           if (q_data.empty()) {
             break;
@@ -321,6 +331,13 @@ int main() {
       const auto next = rdc::NextStream(cur_stream);
       redwood::DeviceStreamSynchronize(next);
 
+      // We could get results now
+      //const auto result = rdc::GetResultValueUnchecked<float>(tid, next);
+      // exe
+
+      // Todo: this q_idx is not true, should be the last one
+      //final_results.push_back(result);
+
       // Switch buffer ( A->B, B-A)
       cur_stream = next;
       rdc::ClearBuffer(tid, cur_stream);
@@ -332,6 +349,11 @@ int main() {
   // rdc::LuanchKernelAsync(tid, cur_stream);
   // const auto next = rdc::NextStream(cur_stream);
   // redwood::DeviceStreamSynchronize(next);
+
+  // for (int i = 0; i < m; ++i) {
+  //   const auto q = final_results[i + 1];
+  //   std::cout << i << ": " << q << std::endl;
+  // }
 
   rdc::ReleaseReducers();
   return EXIT_SUCCESS;
