@@ -4,10 +4,8 @@
 
 #include "../IndicesBuffer.hpp"
 #include "../LeafNodeTable.hpp"
-#include "Redwood/Core.hpp"
+#include "Redwood.hpp"
 #include "Redwood/Duet/DuetAPI.hpp"
-#include "Redwood/Kernels.hpp"
-#include "Redwood/Point.hpp"
 
 namespace rdc {
 

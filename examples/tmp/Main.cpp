@@ -9,8 +9,7 @@
 #include "DuetHandler.hpp"
 #include "Kernel.hpp"
 #include "Octree.hpp"
-#include "Redwood/Core.hpp"
-#include "Redwood/Point.hpp"
+#include "Redwood.hpp"
 
 // Redwood user need to specify which reducer to use (barnes/knn) and its types
 using MyReducer = rdc::DuetBarnesReducer<Point4F, float>;
