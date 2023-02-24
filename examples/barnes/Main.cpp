@@ -12,6 +12,9 @@
 #include "Redwood/Core.hpp"
 #include "Redwood/Point.hpp"
 
+// Redwood user need to specify which reducer to use (barnes/knn) and its types
+using MyReducer = rdc::BarnesReducer<Point4F, float>;
+
 struct ExecutorStats {
   int leaf_node_reduced = 0;
   int branch_node_reduced = 0;
@@ -26,11 +29,18 @@ class Executor {
   static void SetThetaValue(const float theta) { theta_ = theta; }
 
   void NewTask(const Point4F q) {
+    // Clear executor's data
     stats_.leaf_node_reduced = 0;
     stats_.branch_node_reduced = 0;
     cached_result_ = 0.0f;
+
+    // This is a host copy of q point, so some times the traversal doesn't have
+    // to bother with accessing USM
     my_q_ = q;
-    rdc::SetQuery(my_tid_, my_stream_id_, q);
+
+    // Notify Reducer to
+    // In case of FPGA, it will register the anchor point (q) into the registers
+    MyReducer::SetQuery(my_tid_, my_stream_id_, q);
   }
 
   void TraverseRecursiveCpu(const oct::Node<float>* cur) {
@@ -53,12 +63,12 @@ class Executor {
   void TraverseRecursive(const oct::Node<float>* cur) {
     if (cur->IsLeaf()) {
       if (cur->bodies.empty()) return;
-      rdc::ReduceLeafNode(my_tid_, my_stream_id_, cur->uid);
+      MyReducer::ReduceLeafNode(my_tid_, my_stream_id_, cur->uid);
       ++stats_.leaf_node_reduced;
     } else if (const auto my_theta = ComputeThetaValue(cur, my_q_);
                my_theta < theta_) {
       ++stats_.branch_node_reduced;
-      rdc::ReduceBranchNode(my_tid_, my_stream_id_, cur->CenterOfMass());
+      MyReducer::ReduceBranchNode(my_tid_, my_stream_id_, cur->CenterOfMass());
     } else
       for (const auto child : cur->children)
         if (child != nullptr) TraverseRecursive(child);
@@ -143,8 +153,10 @@ int main(int argc, char** argv) {
 
   std::cout << "Loading USM leaf node data..." << std::endl;
 
-  // Initialize Backend, Reducer(double buffer), and Executor(tree algorithm)
-  rdc::InitReducers();
+  // Initialize Backend (find device etc., warmup), Reducer(double buffer), and
+  // Executor(tree algorithm)
+  redwood::Init();
+  MyReducer::InitReducers();
   Executor::SetThetaValue(theta);
 
   // Now octree tree is comstructed, need to move leaf node data into USM
@@ -208,29 +220,31 @@ int main(int argc, char** argv) {
                 << "\tb: " << exe[cur_stream].GetStats().branch_node_reduced
                 << std::endl;
 
-      rdc::LuanchKernelAsync(tid, cur_stream);
+      MyReducer::LuanchKernelAsync(tid, cur_stream);
 
       // Synchronize the next stream
-      const auto next = rdc::NextStream(cur_stream);
+      const auto next = MyReducer::NextStream(cur_stream);
       redwood::DeviceStreamSynchronize(next);
 
       // Read results that were computed and synchronized before
-      const auto result = rdc::GetResultValueUnchecked<float>(tid, next);
+      const auto result = *MyReducer::GetResultAddr(tid, next);
+      // const auto result = rdc::GetResultValueUnchecked<float>(tid, next);
 
       // Todo: this q_idx is not true, should be the last one
       final_results.push_back(result);
 
       // Switch buffer ( A->B, B-A)
       cur_stream = next;
-      rdc::ClearBuffer(tid, cur_stream);
+      MyReducer::ClearBuffer(tid, cur_stream);
+
       q_data.pop();
     }
 
     // When q are finished, remember to Synchronize the last bit;
     redwood::DeviceSynchronize();
-    const auto next = rdc::NextStream(cur_stream);
+    const auto next = MyReducer::NextStream(cur_stream);
 
-    const auto result = rdc::GetResultValueUnchecked<float>(tid, next);
+    const auto result = *MyReducer::GetResultAddr(tid, next);
     final_results.push_back(result);
   });
 
@@ -239,6 +253,8 @@ int main(int argc, char** argv) {
     std::cout << i << ": " << q << std::endl;
   }
 
-  rdc::ReleaseReducers();
+  rdc::FreeLeafNodeTalbe();
+  MyReducer::ReleaseReducers();
+
   return EXIT_SUCCESS;
 }
