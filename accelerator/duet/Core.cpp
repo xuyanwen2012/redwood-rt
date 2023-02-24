@@ -11,7 +11,6 @@
 #include "Redwood/Duet/Consts.hpp"
 #include "Redwood/Point.hpp"
 
-constexpr auto kDebugPrint = false;
 
 // Main entry for Duet
 volatile uint64_t* duet_baseaddr = nullptr;
