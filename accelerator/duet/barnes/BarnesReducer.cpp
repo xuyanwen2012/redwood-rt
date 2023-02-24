@@ -1,7 +1,3 @@
-#pragma once
-
-#include <bits/stdint-uintn.h>
-
 #include "Redwood/Duet/Consts.hpp"
 #include "Redwood/Duet/DuetAPI.hpp"
 #include "Redwood/Point.hpp"
@@ -11,7 +7,7 @@ extern volatile uint64_t* duet_baseaddr;
 
 namespace duet {
 
-void StartQuery(const long tid, const void* query_element) {
+void Start(const long tid, const void* query_element) {
   auto ptr = reinterpret_cast<const Point3D*>(query_element);
 
   const long caller_id = tid;
@@ -26,18 +22,18 @@ void StartQuery(const long tid, const void* query_element) {
   sri[kPos0Z] = *reinterpret_cast<const uint64_t*>(&ptr->data[2]);
 }
 
-// inline void ReduceLeafNode(const long tid, const void* node_base_addr) {
-//   const long caller_id = tid;
-//   volatile uint64_t* sri = duet_baseaddr + (caller_id << 4) + 16;
+void PushLeaf32(const long tid, const void* node_base_addr) {
+  const long caller_id = tid;
+  volatile uint64_t* sri = duet_baseaddr + (caller_id << 4) + 16;
 
-//   if constexpr (kDebugPrint) {
-//     auto ptr = reinterpret_cast<const Point4D*>(node_base_addr);
-//     std::cout << tid << ": pushed duet. " << ptr->data[0]
-//               << "\taddress: " << node_base_addr << std::endl;
-//   }
+  if constexpr (kDebugPrint) {
+    auto ptr = reinterpret_cast<const Point4D*>(node_base_addr);
+    std::cout << tid << ": pushed duet. " << ptr->data[0]
+              << "\taddress: " << node_base_addr << std::endl;
+  }
 
-//   sri[kArg] = reinterpret_cast<uint64_t>(node_base_addr);
-// }
+  sri[kArg] = reinterpret_cast<uint64_t>(node_base_addr);
+}
 
 // void ReduceLeafNode(const long tid, const unsigned node_idx,
 //                     const unsigned query_idx) {
