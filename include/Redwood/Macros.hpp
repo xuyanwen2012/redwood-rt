@@ -1,5 +1,28 @@
 #pragma once
 
+namespace redwood {
+enum class Backends {
+  kCpu = 0,
+  kCuda,
+  kSycl,
+  kDuet,
+};
+}
+
+#ifdef REDWOOD_BACKEND
+#if REDWOOD_BACKEND == 1
+// #define REDWOOD_IN_CUDA
+constexpr auto kRedwoodBackend = redwood::Backends::kCuda;
+#elif REDWOOD_BACKEND == 2
+constexpr auto kRedwoodBackend = redwood::Backends::kSycl;
+#elif REDWOOD_BACKEND == 3
+constexpr auto kRedwoodBackend = redwood::Backends::kDuet;
+#endif
+#else
+constexpr auto kRedwoodBackend = redwood::Backends::kCpu;
+#define REDWOOD_IN_CPU
+#endif
+
 #define NO_OP 0
 
 #ifndef _HAS_NODISCARD
@@ -18,3 +41,5 @@
 #else  // ^^^ CAN HAZ [[nodiscard]] / NO CAN HAZ [[nodiscard]] vvv
 #define _NODISCARD
 #endif  // _HAS_NODISCARD
+
+#define _MAYBE_UNUSED [[maybe_unused]]
