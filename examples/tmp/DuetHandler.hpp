@@ -30,13 +30,16 @@ struct DuetBarnesReducer {
   }
 
   static void ReduceBranchNode(const int tid, const int stream_id,
-                               const DataT data) {}
+                               const DataT* data) {
+    // Should reduce on host
+    // duet::PushBranch(tid, data);
+  }
 
-  static void ClearBuffer(const int tid, const int stream_id) {}
+  static ResultT* GetResult(const int tid, const int stream_id) {}
 
-  static ResultT* GetResultAddr(const int tid, const int stream_id) {}
-
-  static void LuanchKernelAsync(const int tid, const int stream_id) {}
+  // static void ClearBuffer(const int tid, const int stream_id) {}
+  // static ResultT* GetResultAddr(const int tid, const int stream_id) {}
+  // static void LuanchKernelAsync(const int tid, const int stream_id) {}
 };
 
 }  // namespace rdc

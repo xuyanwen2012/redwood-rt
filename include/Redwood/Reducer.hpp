@@ -5,13 +5,6 @@
 
 namespace rdc {
 
-// struct ReducerHandler {
-//   void Init(const int batch_size = 1024);
-//   void Release();
-// };
-
-// These are Common apis,
-
 constexpr auto kNumStreams = redwood::kNumStreams;
 
 template <typename Derived, typename DataT, typename ResultT>

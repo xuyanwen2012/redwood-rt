@@ -107,49 +107,49 @@ struct BarnesReducer
   }
 };
 
-template <typename DataT, typename ResultT>
-struct DuetBarnesReducer {
-  static std::array<MyBarnesHandler, kNumThreads> rhs;
+// template <typename DataT, typename ResultT>
+// struct DuetBarnesReducer {
+//   static std::array<MyBarnesHandler, kNumThreads> rhs;
 
-  static void InitReducers() {
-    for (int i = 0; i < kNumThreads; ++i) rhs[i].Init();
-  }
+//   static void InitReducers() {
+//     for (int i = 0; i < kNumThreads; ++i) rhs[i].Init();
+//   }
 
-  static void ReleaseReducers() {
-    for (int i = 0; i < kNumThreads; ++i) rhs[i].Release();
-  }
+//   static void ReleaseReducers() {
+//     for (int i = 0; i < kNumThreads; ++i) rhs[i].Release();
+//   }
 
-  static void SetQuery(const int tid, const int stream_id, const DataT q) {
-    rhs[tid].SetQueryPoint(stream_id, q);
-  }
+//   static void SetQuery(const int tid, const int stream_id, const DataT q) {
+//     rhs[tid].SetQueryPoint(stream_id, q);
+//   }
 
-  static void ReduceLeafNode(const int tid, const int stream_id,
-                             const int node_idx) {
-    rhs[tid].UsmBuffer(stream_id).PushLeaf(node_idx);
-  }
+//   static void ReduceLeafNode(const int tid, const int stream_id,
+//                              const int node_idx) {
+//     rhs[tid].UsmBuffer(stream_id).PushLeaf(node_idx);
+//   }
 
-  static void ReduceBranchNode(const int tid, const int stream_id,
-                               const DataT data) {}
+//   static void ReduceBranchNode(const int tid, const int stream_id,
+//                                const DataT data) {}
 
-  static void ClearBuffer(const int tid, const int stream_id) {
-    rhs[tid].UsmBuffer(stream_id).Clear();
-  }
+//   static void ClearBuffer(const int tid, const int stream_id) {
+//     rhs[tid].UsmBuffer(stream_id).Clear();
+//   }
 
-  static ResultT* GetResultAddr(const int tid, const int stream_id) {
-    return rhs[tid].UsmResultAddr(stream_id);
-  }
+//   static ResultT* GetResultAddr(const int tid, const int stream_id) {
+//     return rhs[tid].UsmResultAddr(stream_id);
+//   }
 
-  static void LuanchKernelAsync(const int tid, const int stream_id) {
-    redwood::ComputeOneBatchAsync(
-        rhs[tid].UsmBuffer(stream_id).Data(), /* Buffered data to process */
-        static_cast<int>(rhs[tid].UsmBuffer(stream_id).Size()), /* / */
-        rhs[tid].UsmResultAddr(stream_id), /* Return Addr */
-        rdc::LntDataAddr(),                /* Shareddata */
-        nullptr,                           /* Ignore for now */
-        rhs[tid].QueryPoint(stream_id),    /* Single data */
-        stream_id);
-  }
-};
+//   static void LuanchKernelAsync(const int tid, const int stream_id) {
+//     redwood::ComputeOneBatchAsync(
+//         rhs[tid].UsmBuffer(stream_id).Data(), /* Buffered data to process */
+//         static_cast<int>(rhs[tid].UsmBuffer(stream_id).Size()), /* / */
+//         rhs[tid].UsmResultAddr(stream_id), /* Return Addr */
+//         rdc::LntDataAddr(),                /* Shareddata */
+//         nullptr,                           /* Ignore for now */
+//         rhs[tid].QueryPoint(stream_id),    /* Single data */
+//         stream_id);
+//   }
+// };
 
 // using MyBarnesReducer = BarnesReducer<Point4F, float>;
 
