@@ -12,7 +12,7 @@
 namespace rdc {
 
 // to be parameterized
-constexpr auto kNumThreads = 1;
+// constexpr auto kNumThreads = 1;
 constexpr auto kMaxLeafSize = 64;
 
 template <typename DataT, typename ResultT>

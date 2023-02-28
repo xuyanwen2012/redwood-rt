@@ -1,12 +1,14 @@
 #pragma once
 
+#include <utility>
+
 #include "Constants.hpp"
-#include "Point.hpp"
 
 namespace rdc {
 
-constexpr auto kNumStreams = redwood::kNumStreams;
-
+// Algorithms should implement
+// Common API interface for Reducer
+//
 template <typename Derived, typename DataT, typename ResultT>
 struct ReducerBase {
   static void InitReducers() { Derived::InitReducers(); }
@@ -33,7 +35,7 @@ struct ReducerBase {
   }
 
   static int NextStream(const int stream_id) {
-    return (kNumStreams - 1) - stream_id;
+    return (redwood::kNumStreams - 1) - stream_id;
   }
 
   template <typename... Args>
