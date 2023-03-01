@@ -314,7 +314,7 @@ int main(int argc, char** argv) {
                   << "\tb: " << exe[cur_stream].GetStats().branch_node_reduced
                   << std::endl;
 
-        // rdc::LuanchKernelAsync(tid, cur_stream);
+        rdc::LuanchKernelAsync_PB(tid, cur_stream);
         blocks[cur_stream]->recycle();
       }
 
