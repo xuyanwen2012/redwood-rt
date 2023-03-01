@@ -75,21 +75,20 @@ struct BarnesHandler {
 
 using MyBarnesHandler = BarnesHandler<Point4F, float>;
 
+// TMP
+constexpr auto kNumThreads = 1;
+
 template <typename DataT, typename ResultT>
 struct DoubleBufferReducer
     : ReducerBase<DoubleBufferReducer<DataT, ResultT>, DataT, ResultT> {
- private:
-  static std::vector<MyBarnesHandler> rhs;
-  static int num_threads;
+  inline static std::array<MyBarnesHandler, kNumThreads> rhs;
 
- public:
-  static void InitReducers(const int num_thread = 1) {
-    num_threads = num_thread;
-    rhs.resize(num_threads);
+  static void InitReducers() {
+    for (int i = 0; i < kNumThreads; ++i) rhs[i].Init();
   }
 
   static void ReleaseReducers() {
-    for (int i = 0; i < num_threads; ++i) rhs[i].Release();
+    for (int i = 0; i < kNumThreads; ++i) rhs[i].Release();
   }
 
   static void SetQuery(const int tid, const int stream_id, const DataT q) {
