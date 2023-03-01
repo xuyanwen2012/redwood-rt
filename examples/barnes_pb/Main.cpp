@@ -93,12 +93,12 @@ class Executor {
 
   static void SetThetaValue(const float theta) { theta_ = theta; }
 
-  void NewTask(const Point4F q) {
+  void NewTask(const Point4F q, int pb_idx) {
     stats_.leaf_node_reduced = 0;
     stats_.branch_node_reduced = 0;
     cached_result_ = 0.0f;
     my_q_ = q;
-    rdc::SetQuery(my_tid_, my_stream_id_, q);
+    rdc::SetQuery_PB(my_tid_, my_stream_id_, pb_idx, q);
   }
 
   void TraverseRecursiveCpu(const oct::Node<float>* cur) {
@@ -129,22 +129,17 @@ class Executor {
 
     for (int i = 0; i < size; i++) {
       Point4F query = block->get(i);
-      NewTask(query);
+      NewTask(query, i);
 
       if (cur->IsLeaf()) {
         if (cur->bodies.empty()) continue;
-        rdc::ReduceLeafNode(my_tid_, my_stream_id_, cur->uid);
+        rdc::ReduceLeafNode_PB(my_tid_, my_stream_id_, i, cur->uid);
         ++stats_.leaf_node_reduced;
-        // Read results that were computed and synchronized before
-
-        // Todo: this q_idx is not true, should be the last one
       } else if (const auto my_theta = ComputeThetaValue(cur, query);
                  my_theta < theta_) {
         ++stats_.branch_node_reduced;
-        rdc::ReduceBranchNode(my_tid_, my_stream_id_, cur->CenterOfMass());
-        // Read results that were computed and synchronized before
+        rdc::ReduceBranchNode_PB(my_tid_, my_stream_id_, cur->CenterOfMass());
 
-        // Todo: this q_idx is not true, should be the last one
       } else {
         next_block->add(query);
       }
@@ -258,6 +253,7 @@ int main(int argc, char** argv) {
                    MyRand(0.0f, 1000.0f), 1.0f};
   };
   const auto m = 32;
+  const int block_size = 32;
   std::queue<Point4F> q_data;
   for (int i = 0; i < m; ++i) q_data.push(rand_point4f());
 
@@ -287,13 +283,13 @@ int main(int argc, char** argv) {
   Executor exe[rdc::kNumStreams]{{tid, 0}, {tid, 1}};
 
   TimeTask("Traversal", [&] {
-    Block<Point4F>* blocks[rdc::kNumStreams]{{new Block<Point4F>(2)},
-                                             {new Block<Point4F>(2)}};
+    Block<Point4F>* blocks[rdc::kNumStreams]{{new Block<Point4F>(block_size)},
+                                             {new Block<Point4F>(block_size)}};
     // Block<Point4F>* block = new Block<Point4F>(2);
     int level = 0;
     BlockStack<Point4F>* block_stack[rdc::kNumStreams] = {
-        new BlockStack<Point4F>(2, tree.GetStats().max_depth + 1),
-        new BlockStack<Point4F>(2, tree.GetStats().max_depth + 1)};
+        new BlockStack<Point4F>(block_size, tree.GetStats().max_depth + 1),
+        new BlockStack<Point4F>(block_size, tree.GetStats().max_depth + 1)};
 
     while (!q_data.empty()) {
       const auto q = q_data.front();
@@ -304,7 +300,7 @@ int main(int argc, char** argv) {
       // Set anchor
       // exe[cur_stream].NewTask(q);
 
-      if (blocks[cur_stream]->isFull(2)) {
+      if (blocks[cur_stream]->isFull(block_size)) {
         // std::cout<<"full!"<<std::endl;
         block_stack[cur_stream]->setBlock(0, blocks[cur_stream]);
         // Traverse tree and collect data
@@ -314,23 +310,24 @@ int main(int argc, char** argv) {
                   << "\tb: " << exe[cur_stream].GetStats().branch_node_reduced
                   << std::endl;
 
-        rdc::LuanchKernelAsync_PB(tid, cur_stream);
+        rdc::LuanchKernelAsync_PB(tid, cur_stream, block_size);
         blocks[cur_stream]->recycle();
       }
-
       // Synchronize the next stream
       const auto next = rdc::NextStream(cur_stream);
       redwood::DeviceStreamSynchronize(next);
 
-      // Read results that were computed and synchronized before
-      const auto result = rdc::GetResultValueUnchecked<float>(tid, next);
-
-      // Todo: this q_idx is not true, should be the last one
-      final_results.push_back(result);
-
+      for (int i = 0; i < block_size; i++) {
+        // Read results that were computed and synchronized before
+        const auto result =
+            rdc::GetResultValueUnchecked_PB<float>(tid, next, i);
+        // Todo: this q_idx is not true, should be the last one
+        final_results.push_back(result);
+        rdc::ClearBuffer(tid, i, next);
+      }
       // Switch buffer ( A->B, B-A)
       cur_stream = next;
-      rdc::ClearBuffer(tid, cur_stream);
+
       q_data.pop();
     }
 
@@ -338,8 +335,10 @@ int main(int argc, char** argv) {
     redwood::DeviceSynchronize();
     const auto next = rdc::NextStream(cur_stream);
 
-    const auto result = rdc::GetResultValueUnchecked<float>(tid, next);
-    final_results.push_back(result);
+    for (int i = 0; i < block_size; i++) {
+      const auto result = rdc::GetResultValueUnchecked_PB<float>(tid, next, i);
+      final_results.push_back(result);
+    }
   });
 
   for (int i = 0; i < m; ++i) {

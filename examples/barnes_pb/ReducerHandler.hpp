@@ -128,15 +128,29 @@ inline void ReduceLeafNode_PB(const int tid, const int stream_id,
                               const int pb_idx, const int node_idx) {
   rhs[tid].UsmBuffer(stream_id, pb_idx).PushLeaf(node_idx);
   // rhs[tid].UsmBuffer(stream_id).PushLeaf(node_idx);
-}
+} 
+inline void ReduceBranchNode_PB(const int tid, const int stream_id,
+                        const Point4F data){};
 
-inline void LuanchKernelAsync_PB(const int tid, const int stream_id) {
-  // Just do some printing to see if data are collected correctly
+inline void LuanchKernelAsync_PB(const int tid, const int stream_id, int block_size) {
+  // TODO: Need to select User's kernel
+  for (int i = 0; i < block_size; ++i)
+  redwood::ComputeOneBatchAsync_PB(
+      rhs[tid].UsmBuffer(stream_id, i).Data(), /* Buffered data to process */
+      static_cast<int>(rhs[tid].UsmBuffer(stream_id, i ).Size()), /* / */
+      rhs[tid].UsmResultAddr(stream_id),                      /* Return Addr */
+      rdc::LntDataAddr(),                                     /* Shared data */
+      nullptr,                        /* Ignore for now */
+      rhs[tid].QueryPoint(stream_id, i), /* Single data */
+      stream_id,
+      i);
 }
 
 template <typename T>
 _NODISCARD T GetResultValueUnchecked_PB(const int tid, const int stream_id,
-                                        const int pb_idx) {}
+                                        const int pb_idx) {
+  return rhs[tid].UsmResultAddr(stream_id)[pb_idx];
+                                        }
 
 // -------------------- Yanwen's addition End ----------------------------
 
@@ -153,19 +167,19 @@ _NODISCARD T GetResultValueUnchecked_PB(const int tid, const int stream_id,
 // inline void ReduceBranchNode(const int tid, const int stream_id,
 //                              const Point4F data){};
 
-// inline void ClearBuffer(const int tid, const int stream_id) {
-//   rhs[tid].UsmBuffer(stream_id).Clear();
-// }
+inline void ClearBuffer(const int tid, int pb_idx, const int stream_id) {
+   rhs[tid].UsmBuffer(stream_id, pb_idx).Clear();
+ }
 
-// _NODISCARD inline int NextStream(const int stream_id) {
-//   return (kNumStreams - 1) - stream_id;
-// }
+ _NODISCARD inline int NextStream(const int stream_id) {
+   return (kNumStreams - 1) - stream_id;
+ }
 
 // // Mostly for KNN
-// template <typename T>
-// _NODISCARD T* GetResultAddr(const int tid, const int stream_id) {
-//   return rhs[tid].UsmResultAddr(stream_id);
-// }
+template <typename T>
+_NODISCARD T* GetResultAddr(const int tid, const int stream_id) {
+  return rhs[tid].UsmResultAddr(stream_id);
+ }
 
 // // Mostly for BH/NN
 // template <typename T>
@@ -173,16 +187,16 @@ _NODISCARD T GetResultValueUnchecked_PB(const int tid, const int stream_id,
 //   return *GetResultAddr<T>(tid, stream_id);
 // }
 
-// inline void LuanchKernelAsync(const int tid, const int stream_id) {
+ inline void LuanchKernelAsync(const int tid, const int stream_id, int pb_idx) {
 //   // TODO: Need to select User's kernel
-//   redwood::ComputeOneBatchAsync(
-//       rhs[tid].UsmBuffer(stream_id).Data(), /* Buffered data to process */
-//       static_cast<int>(rhs[tid].UsmBuffer(stream_id).Size()), /* / */
-//       rhs[tid].UsmResultAddr(stream_id),                      /* Return Addr
-//       */ rdc::LntDataAddr(),                                     /* Shared
-//       data */ nullptr,                        /* Ignore for now */
-//       rhs[tid].QueryPoint(stream_id), /* Single data */
-//       stream_id);
-// }
+   redwood::ComputeOneBatchAsync(
+       rhs[tid].UsmBuffer(stream_id, pb_idx).Data(), /* Buffered data to process */
+       static_cast<int>(rhs[tid].UsmBuffer(stream_id, pb_idx).Size()), /* / */
+      rhs[tid].UsmResultAddr(stream_id),                      /* Return Addr
+      */ rdc::LntDataAddr(),                                     /* Shared
+      data */ nullptr,                        /* Ignore for now */
+      rhs[tid].QueryPoint(stream_id, pb_idx), /* Single data */
+       stream_id);
+ }
 
 }  // namespace rdc
