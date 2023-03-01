@@ -81,6 +81,23 @@ void ComputeOneBatchAsync(const int* u_leaf_indices,  /**/
     *out += acc;
   }
 }
+void ComputeOneBatchAsync_PB(const int* u_leaf_indices,  /**/
+                          const int num_active_leafs, /**/
+                          float* out,                 /**/
+                          const Point4F* u_lnt_data,  /**/
+                          const int* u_lnt_sizes,     /**/
+                          const Point4F q,            /**/
+                          const int stream_id,
+                          const int pb_idx) {
+  constexpr auto leaf_max_size = 64;
+  for (int i = 0; i < num_active_leafs; ++i) {
+    const auto leaf_id = u_leaf_indices[i];
+
+    auto acc = SumLeaf(q, u_lnt_data + leaf_id * leaf_max_size, leaf_max_size);
+
+    out[pb_idx] += acc;
+  }
+}
 
 void ProcessKnnAsync(const int* u_leaf_indices,  /**/
                      const Point4F* u_q_points,  /**/
