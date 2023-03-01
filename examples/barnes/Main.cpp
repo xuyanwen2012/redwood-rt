@@ -8,12 +8,13 @@
 #include "../Utils.hpp"
 #include "Kernel.hpp"
 #include "Octree.hpp"
-#include "ReducerHandler.hpp"
+#include "Reducer.hpp"
 #include "Redwood/Core.hpp"
 #include "Redwood/Point.hpp"
 
 // Redwood user need to specify which reducer to use (barnes/knn) and its types
-using MyReducer = rdc::BarnesReducer<Point4F, float>;
+// using MyReducer = rdc::BarnesReducer<Point4F, float>;
+using MyReducer = rdc::DoubleBufferReducer<Point4F, float>;
 
 struct ExecutorStats {
   int leaf_node_reduced = 0;
@@ -202,7 +203,7 @@ int main(int argc, char** argv) {
   std::cout << "Start Traversal " << std::endl;
   constexpr int tid = 0;
   int cur_stream = 0;
-  Executor exe[rdc::kNumStreams]{{tid, 0}, {tid, 1}};
+  Executor exe[redwood::kNumStreams]{{tid, 0}, {tid, 1}};
 
   TimeTask("Traversal", [&] {
     while (!q_data.empty()) {

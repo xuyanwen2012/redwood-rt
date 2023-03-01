@@ -24,8 +24,8 @@ struct BarnesHandler {
       usm_buffers[i].Allocate(batch_size);
 
       // CUDA Only
-      redwood::AttachStreamMem(i, usm_buffers[i].leaf_nodes.data());
-      redwood::AttachStreamMem(i, usm_result[i]);
+      redwood::AttachStream(i, usm_buffers[i].leaf_nodes.data());
+      redwood::AttachStream(i, usm_result[i]);
     }
   }
 

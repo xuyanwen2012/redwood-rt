@@ -23,26 +23,32 @@ struct BarnesHandler {
   std::array<IndicesBuffer, redwood::kNumStreams> usm_leaf_nodes;
   std::array<ResultT*, redwood::kNumStreams> usm_result;
   std::array<DataT, redwood::kNumStreams> h_query;
+  // std::array<DataT*, redwood::kNumStreams> usm_query;
 
  public:
+  BarnesHandler(const int batch_size = 1024) { Init(batch_size); }
+
   void Init(const int batch_size = 1024) {
     for (int i = 0; i < redwood::kNumStreams; ++i) {
+      // How many query per handler
+      constexpr auto m = 1;
+
       usm_leaf_nodes[i].reserve(batch_size);
+      redwood::AttachStream(i, usm_leaf_nodes[i].data());
 
-      constexpr auto result_size = 1;
-      usm_result[i] = redwood::UsmMalloc<float>(result_size);
+      // If point-blocking, then it is likely to be 128
+      usm_result[i] = redwood::UsmMalloc<ResultT>(m);
+      redwood::AttachStream(i, usm_result[i]);
 
-      if constexpr (kRedwoodBackend == redwood::Backends::kCuda) {
-        // CUDA Only
-        redwood::AttachStreamMem(i, usm_leaf_nodes[i].data());
-        redwood::AttachStreamMem(i, usm_result[i]);
-      }
+      // usm_query[i] = redwood::UsmMalloc<DataT>(m);
+      // redwood::AttachStream(i, usm_query[i]);
     }
   }
 
   void Release() {
     for (int i = 0; i < redwood::kNumStreams; ++i) {
       redwood::UsmFree(usm_result[i]);
+      // redwood::UsmFree(usm_query[i]);
 
       // Mannuelly free
       IndicesBuffer tmp;
@@ -62,7 +68,7 @@ struct BarnesHandler {
     return h_query[stream_id];
   }
 
-  void SetQueryPoint(const int stream_id, const DataT q) {
+  void SetQueryPoint(const int stream_id, const DataT& q) {
     h_query[stream_id] = q;
   }
 };
@@ -77,7 +83,10 @@ struct DoubleBufferReducer
   static int num_threads;
 
  public:
-  static void InitReducers() { num_threads = 1; }
+  static void InitReducers(const int num_thread = 1) {
+    num_threads = num_thread;
+    rhs.resize(num_threads);
+  }
 
   static void ReleaseReducers() {
     for (int i = 0; i < num_threads; ++i) rhs[i].Release();
@@ -115,64 +124,7 @@ struct DoubleBufferReducer
     //     nullptr,                           /* Ignore for now */
     //     rhs[tid].QueryPoint(stream_id),    /* Single data */
     //     stream_id);
-    redwood::ComputeOneBatchAsync(
-        // rhs[tid].UsmBuffer(stream_id).data(), /* Buffered data to process */
-        // static_cast<int>(rhs[tid].UsmBuffer(stream_id).size()),
-
-        // NodeDataBaseAddr(node_idx),
-        // HowMany,
-
-        rhs[tid].UsmResultAddr(stream_id), /* Return Addr */
-        rdc::LntDataAddr(),                /* Shareddata */
-        nullptr,                           /* Ignore for now */
-        rhs[tid].QueryPoint(stream_id),    /* Single data */
-        stream_id);
   }
 };
-
-// template <typename DataT, typename ResultT>
-// struct DoubleBufferReducer
-//     : ReducerBase<DoubleBufferReducer<DataT, ResultT>, DataT, ResultT> {
-//  private:
-//   static std::array<MyBarnesHandler, kNumThreads> rhs;
-
-//  public:
-//   static void InitReducers() {}
-
-//   static void ReleaseReducers() {
-//     for (int i = 0; i < kNumThreads; ++i) rhs[i].Release();
-//   }
-
-//   static void SetQuery(const int tid, const int stream_id, const DataT q) {
-//     rhs[tid].SetQueryPoint(stream_id, q);
-//   }
-
-//   static void ReduceLeafNode(const int tid, const int stream_id,
-//                              const int node_idx) {
-//     rhs[tid].UsmBuffer(stream_id).PushLeaf(node_idx);
-//   }
-
-//   static void ReduceBranchNode(const int tid, const int stream_id,
-//                                const DataT data) {}
-
-//   static void ClearBuffer(const int tid, const int stream_id) {
-//     rhs[tid].UsmBuffer(stream_id).Clear();
-//   }
-
-//   static ResultT* GetResultAddr(const int tid, const int stream_id) {
-//     return rhs[tid].UsmResultAddr(stream_id);
-//   }
-
-//   static void LuanchKernelAsync(const int tid, const int stream_id) {
-//     redwood::ComputeOneBatchAsync(
-//         rhs[tid].UsmBuffer(stream_id).Data(), /* Buffered data to process */
-//         static_cast<int>(rhs[tid].UsmBuffer(stream_id).Size()), /* / */
-//         rhs[tid].UsmResultAddr(stream_id), /* Return Addr */
-//         rdc::LntDataAddr(),                /* Shareddata */
-//         nullptr,                           /* Ignore for now */
-//         rhs[tid].QueryPoint(stream_id),    /* Single data */
-//         stream_id);
-//   }
-// };
 
 }  // namespace rdc

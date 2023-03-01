@@ -1,12 +1,16 @@
+#include "Redwood.hpp"
+
 #include <cmath>
 #include <iostream>
 #include <limits>
 
-#include "Redwood/Point.hpp"
+#include "Redwood/Kernels.hpp"
 
 namespace redwood {
 
-void Init() {}
+void Init() {
+  // No Op
+}
 
 void DeviceStreamSynchronize(const int stream_id) {
   // No Op

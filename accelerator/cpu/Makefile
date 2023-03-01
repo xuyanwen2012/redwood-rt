@@ -14,5 +14,5 @@ $(LIBRARY): $(OBJS)
 	$(CXX) $(CXXFLAGS) -I../../include -c $<
 
 clean:
-	rm -rf *.o
+	rm -rf *.o $(LIBRARY)
 
