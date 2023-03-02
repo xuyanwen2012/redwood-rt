@@ -30,12 +30,14 @@ struct DuetBarnesReducer
     duet::PushLeaf32(tid, addr);
   }
 
-  static void ReduceBranchNode(const int tid, const int stream_id,
-                               const DataT data) {}
+  // static void ReduceBranchNode(const int tid, const int stream_id,
+  //                              const DataT data) {}
 
   static void ClearBuffer(const int tid, const int stream_id) {}
 
-  static ResultT* GetResultAddr(const int tid, const int stream_id) {}
+  static ResultT* GetResultAddr(const int tid, const int stream_id) {
+    return nullptr;
+  }
 
   static void LuanchKernelAsync(const int tid, const int stream_id) {}
 };

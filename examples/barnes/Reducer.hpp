@@ -100,10 +100,11 @@ struct DoubleBufferReducer
     rhs[tid].UsmBuffer(stream_id).push_back(node_idx);
   }
 
-  static void ReduceBranchNode(const int tid, const int stream_id,
-                               const DataT data) {
-    // TODO: Do reduction on CPU for now
-  }
+  // static void ReduceBranchNode(const int tid, const int stream_id,
+  //                              const DataT& data) {
+  //   // constexpr auto my_functor = MyFunctor();
+  //   // const auto dist = my_functor(data, rhs[tid].QueryPoint(stream_id));
+  // }
 
   static void ClearBuffer(const int tid, const int stream_id) {
     rhs[tid].UsmBuffer(stream_id).clear();
@@ -115,14 +116,14 @@ struct DoubleBufferReducer
 
   // TODO: Make sure in future version, we can launch User generated Kernel
   static void LuanchKernelAsync(const int tid, const int stream_id) {
-    // redwood::ComputeOneBatchAsync(
-    //     rhs[tid].UsmBuffer(stream_id).data(), /* Buffered data to process */
-    //     static_cast<int>(rhs[tid].UsmBuffer(stream_id).size()),
-    //     rhs[tid].UsmResultAddr(stream_id), /* Return Addr */
-    //     rdc::LntDataAddr(),                /* Shareddata */
-    //     nullptr,                           /* Ignore for now */
-    //     rhs[tid].QueryPoint(stream_id),    /* Single data */
-    //     stream_id);
+    redwood::ComputeOneBatchAsync(
+        rhs[tid].UsmBuffer(stream_id).data(), /* Buffered data to process */
+        static_cast<int>(rhs[tid].UsmBuffer(stream_id).size()),
+        rhs[tid].UsmResultAddr(stream_id), /* Return Addr */
+        rdc::LntDataAddr(),                /* Shareddata */
+        nullptr,                           /* Ignore for now */
+        rhs[tid].QueryPoint(stream_id),    /* Single data */
+        stream_id);
   }
 };
 

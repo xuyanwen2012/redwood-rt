@@ -6,15 +6,16 @@
 
 #include "../LoadFile.hpp"
 #include "../Utils.hpp"
+#include "DuetReducer.hpp"
 #include "Kernel.hpp"
 #include "Octree.hpp"
 #include "Reducer.hpp"
-#include "Redwood/Core.hpp"
-#include "Redwood/Point.hpp"
+#include "Redwood.hpp"
 
 // Redwood user need to specify which reducer to use (barnes/knn) and its types
-// using MyReducer = rdc::BarnesReducer<Point4F, float>;
+
 using MyReducer = rdc::DoubleBufferReducer<Point4F, float>;
+// using MyReducer = rdc::DuetBarnesReducer<Point4F, float>;
 
 struct ExecutorStats {
   int leaf_node_reduced = 0;
@@ -44,32 +45,27 @@ class Executor {
     MyReducer::SetQuery(my_tid_, my_stream_id_, q);
   }
 
-  void TraverseRecursiveCpu(const oct::Node<float>* cur) {
-    if (cur->IsLeaf()) {
-      if (cur->bodies.empty()) return;
-      cached_result_ += ReduceLeafsCpu(my_q_, cur->uid);
-      ++stats_.leaf_node_reduced;
-    } else {
-      if (const auto my_theta = ComputeThetaValue(cur, my_q_);
-          my_theta < theta_) {
-        ++stats_.branch_node_reduced;
-        // cached_result_ += KernelFunc(cur->CenterOfMass(), my_q_);
-      } else
-        for (const auto child : cur->children)
-          if (child != nullptr) TraverseRecursiveCpu(child);
-    }
-  }
-
   // Main Barnes-Hut Traversal Algorithm, annotated with Redwood APIs
   void TraverseRecursive(const oct::Node<float>* cur) {
     if (cur->IsLeaf()) {
       if (cur->bodies.empty()) return;
+
+      // ------------------------------------------------------------
       MyReducer::ReduceLeafNode(my_tid_, my_stream_id_, cur->uid);
+      // ------------------------------------------------------------
+
       ++stats_.leaf_node_reduced;
     } else if (const auto my_theta = ComputeThetaValue(cur, my_q_);
                my_theta < theta_) {
       ++stats_.branch_node_reduced;
-      MyReducer::ReduceBranchNode(my_tid_, my_stream_id_, cur->CenterOfMass());
+
+      // ------ TODO: lets' not reduce this on accelerator ----------
+      constexpr auto my_functor = MyFunctor();
+      const auto dist = my_functor(cur->CenterOfMass(), my_q_);
+      // MyReducer::ReduceBranchNode(my_tid_, my_stream_id_,
+      // cur->CenterOfMass());
+      // ------------------------------------------------------------
+
     } else
       for (const auto child : cur->children)
         if (child != nullptr) TraverseRecursive(child);
@@ -93,18 +89,6 @@ class Executor {
 
     const auto norm = sqrtf(norm_sqr);
     return node->bounding_box.dimension.data[0] / norm;
-  }
-
-  static float ReduceLeafsCpu(const Point4F& q, int leaf_idx) {
-    constexpr auto leaf_size = 64;
-    const auto addr = rdc::LntDataAddr() + leaf_idx * leaf_size;
-
-    float sum{};
-    for (int i = 0; i < leaf_size; ++i) {
-      sum += KernelFunc(addr[i], q);
-    }
-
-    return sum;
   }
 
  private:
@@ -174,6 +158,7 @@ int main(int argc, char** argv) {
     return Point4F{MyRand(0.0f, 1000.0f), MyRand(0.0f, 1000.0f),
                    MyRand(0.0f, 1000.0f), 1.0f};
   };
+
   const auto m = 32;
   std::queue<Point4F> q_data;
   for (int i = 0; i < m; ++i) q_data.push(rand_point4f());
@@ -181,35 +166,17 @@ int main(int argc, char** argv) {
   std::vector<float> final_results;
   final_results.reserve(m + 1);  // need to discard the first
 
-  // TimeTask("Cpu Traversal", [&] {
-  //   Executor cpu_exe(0, 0);
-  //   while (!q_data.empty()) {
-  //     const auto q = q_data.front();
-
-  //     cpu_exe.NewTask(q);
-  //     cpu_exe.TraverseRecursiveCpu(tree.GetRoot());
-  //     final_results.push_back(cpu_exe.cached_result_);
-
-  //     q_data.pop();
-  //   }
-  // });
-
-  // for (int i = 0; i < m; ++i) {
-  //   const auto q = final_results[i];
-  //   std::cout << i << ": " << q << std::endl;
-  // }
-
   // Assume in future version this tid will be generated?
   std::cout << "Start Traversal " << std::endl;
   constexpr int tid = 0;
-  int cur_stream = 0;
-  Executor exe[redwood::kNumStreams]{{tid, 0}, {tid, 1}};
 
+  // ------------------- CUDA ------------------------------------
   TimeTask("Traversal", [&] {
+    int cur_stream = 0;
+    Executor exe[redwood::kNumStreams]{{tid, 0}, {tid, 1}};
+
     while (!q_data.empty()) {
       const auto q = q_data.front();
-
-      // std::cout << "Processing task: " << q << std::endl;
 
       // Set anchor
       exe[cur_stream].NewTask(q);
@@ -229,7 +196,6 @@ int main(int argc, char** argv) {
 
       // Read results that were computed and synchronized before
       const auto result = *MyReducer::GetResultAddr(tid, next);
-      // const auto result = rdc::GetResultValueUnchecked<float>(tid, next);
 
       // Todo: this q_idx is not true, should be the last one
       final_results.push_back(result);
@@ -248,6 +214,8 @@ int main(int argc, char** argv) {
     const auto result = *MyReducer::GetResultAddr(tid, next);
     final_results.push_back(result);
   });
+
+  // -------------------------------------------------------------
 
   for (int i = 0; i < m; ++i) {
     const auto q = final_results[i + 1];

@@ -24,10 +24,10 @@ struct ReducerBase {
     Derived::ReduceLeafNode(std::forward<Args>(args)...);
   }
 
-  template <typename... Args>
-  static void ReduceBranchNode(Args&&... args) {
-    Derived::ReduceBranchNode(std::forward<Args>(args)...);
-  }
+  // template <typename... Args>
+  // static void ReduceBranchNode(Args&&... args) {
+  //   Derived::ReduceBranchNode(std::forward<Args>(args)...);
+  // }
 
   template <typename... Args>
   static void ClearBuffer(Args&&... args) {
