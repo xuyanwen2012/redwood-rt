@@ -225,6 +225,7 @@ int main(int argc, char** argv) {
         exe.StartQuery(q, tree.GetRoot());
 
         const auto result_addr = MyReducer::GetResultAddr(tid, 0);
+        final_results.push_back(0.0f);
         q_data.pop();
       }
 
@@ -235,7 +236,7 @@ int main(int argc, char** argv) {
   // -------------------------------------------------------------
 
   for (int i = 0; i < m; ++i) {
-    const auto q = final_results[i + 1];
+    const auto q = final_results[i];
     std::cout << i << ": " << q << std::endl;
   }
 
