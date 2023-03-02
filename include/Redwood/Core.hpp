@@ -15,8 +15,8 @@ void AttachStreamMem(int stream_id, void* addr);
 
 // CUDA Only
 inline void AttachStream(int stream_id, void* addr) {
-  if constexpr (kRedwoodBackend == redwood::Backends::kCuda)
-    AttachStreamMem(stream_id, addr);
+  // if constexpr (kRedwoodBackend == redwood::Backends::kCuda)
+  AttachStreamMem(stream_id, addr);
 }
 
 }  // namespace redwood

@@ -14,8 +14,8 @@
 
 // Redwood user need to specify which reducer to use (barnes/knn) and its types
 
-using MyReducer = rdc::DoubleBufferReducer<Point4F, float>;
-// using MyReducer = rdc::DuetBarnesReducer<Point4F, float>;
+// using MyReducer = rdc::DoubleBufferReducer<Point4F, float>;
+using MyReducer = rdc::DuetBarnesReducer<Point4F, float>;
 
 struct ExecutorStats {
   int leaf_node_reduced = 0;
@@ -24,13 +24,24 @@ struct ExecutorStats {
 
 // BH Algorithm
 class Executor {
+  // Store some reference used
+  const int my_tid_;
+  const int my_stream_id_;
+  static float theta_;  // = 0.2f;
+  ExecutorStats stats_;
+
+  Point4F my_q_;
+
+  // Used on the CPU side
+  float cached_result_;
+
  public:
   Executor(const int tid, const int stream_id)
       : my_tid_(tid), my_stream_id_(stream_id) {}
 
   static void SetThetaValue(const float theta) { theta_ = theta; }
 
-  void NewTask(const Point4F q) {
+  void StartQuery(const Point4F& q, const oct::Node<float>* root) {
     // Clear executor's data
     stats_.leaf_node_reduced = 0;
     stats_.branch_node_reduced = 0;
@@ -43,6 +54,28 @@ class Executor {
     // Notify Reducer to
     // In case of FPGA, it will register the anchor point (q) into the registers
     MyReducer::SetQuery(my_tid_, my_stream_id_, q);
+
+    TraverseRecursive(root);
+  }
+
+  ExecutorStats GetStats() const { return stats_; }
+
+  float GetHostResult() const { return cached_result_; }
+
+ private:
+  static float ComputeThetaValue(const oct::Node<float>* node,
+                                 const Point4F& pos) {
+    const auto com = node->CenterOfMass();
+    auto norm_sqr = 1e-9f;
+
+    // Use only the first three property (x, y, z) for this theta compuation
+    for (int i = 0; i < 3; ++i) {
+      const auto diff = com.data[i] - pos.data[i];
+      norm_sqr += diff * diff;
+    }
+
+    const auto norm = sqrtf(norm_sqr);
+    return node->bounding_box.dimension.data[0] / norm;
   }
 
   // Main Barnes-Hut Traversal Algorithm, annotated with Redwood APIs
@@ -70,39 +103,6 @@ class Executor {
       for (const auto child : cur->children)
         if (child != nullptr) TraverseRecursive(child);
   }
-
-  ExecutorStats GetStats() const { return stats_; }
-
-  float GetResult() const { return cached_result_; }
-
- protected:
-  static float ComputeThetaValue(const oct::Node<float>* node,
-                                 const Point4F pos) {
-    const auto com = node->CenterOfMass();
-    auto norm_sqr = 1e-9f;
-
-    // Use only the first three property (x, y, z) for this theta compuation
-    for (int i = 0; i < 3; ++i) {
-      const auto diff = com.data[i] - pos.data[i];
-      norm_sqr += diff * diff;
-    }
-
-    const auto norm = sqrtf(norm_sqr);
-    return node->bounding_box.dimension.data[0] / norm;
-  }
-
- private:
-  // Store some reference used
-  const int my_tid_;
-  const int my_stream_id_;
-  static float theta_;  // = 0.2f;
-  ExecutorStats stats_;
-
-  Point4F my_q_;
-
- public:
-  // Used on the CPU side
-  float cached_result_;
 };
 
 float Executor::theta_ = 0.2f;
@@ -164,55 +164,72 @@ int main(int argc, char** argv) {
   for (int i = 0; i < m; ++i) q_data.push(rand_point4f());
 
   std::vector<float> final_results;
-  final_results.reserve(m + 1);  // need to discard the first
+  final_results.reserve(m);  // need to discard the first
 
   // Assume in future version this tid will be generated?
   std::cout << "Start Traversal " << std::endl;
   constexpr int tid = 0;
 
-  // ------------------- CUDA ------------------------------------
   TimeTask("Traversal", [&] {
-    int cur_stream = 0;
-    Executor exe[redwood::kNumStreams]{{tid, 0}, {tid, 1}};
+    if constexpr (false) {
+      // ------------------- CUDA ------------------------------------
 
-    while (!q_data.empty()) {
-      const auto q = q_data.front();
+      int cur_stream = 0;
+      Executor exe[redwood::kNumStreams]{{tid, 0}, {tid, 1}};
 
-      // Set anchor
-      exe[cur_stream].NewTask(q);
+      while (!q_data.empty()) {
+        const auto q = q_data.front();
 
-      // Traverse tree and collect data
-      exe[cur_stream].TraverseRecursive(tree.GetRoot());
+        exe[cur_stream].StartQuery(q, tree.GetRoot());
 
-      std::cout << "\tl: " << exe[cur_stream].GetStats().leaf_node_reduced
-                << "\tb: " << exe[cur_stream].GetStats().branch_node_reduced
-                << std::endl;
+        if constexpr (false) {
+          std::cout << "\tl: " << exe[cur_stream].GetStats().leaf_node_reduced
+                    << "\tb: " << exe[cur_stream].GetStats().branch_node_reduced
+                    << std::endl;
+        }
 
-      MyReducer::LuanchKernelAsync(tid, cur_stream);
+        MyReducer::LuanchKernelAsync(tid, cur_stream);
 
-      // Synchronize the next stream
+        // Synchronize the next stream
+        const auto next = MyReducer::NextStream(cur_stream);
+        redwood::DeviceStreamSynchronize(next);
+
+        // Read results that were computed and synchronized before
+        const auto result_addr = MyReducer::GetResultAddr(tid, next);
+
+        final_results.push_back(*result_addr);
+
+        // Switch buffer ( A->B, B-A)
+        cur_stream = next;
+        MyReducer::ClearBuffer(tid, cur_stream);
+
+        q_data.pop();
+      }
+
+      // When q are finished, remember to Synchronize the last bit;
+      redwood::DeviceSynchronize();
       const auto next = MyReducer::NextStream(cur_stream);
-      redwood::DeviceStreamSynchronize(next);
 
-      // Read results that were computed and synchronized before
-      const auto result = *MyReducer::GetResultAddr(tid, next);
+      const auto result_addr = MyReducer::GetResultAddr(tid, next);
+      final_results.push_back(*result_addr);
 
-      // Todo: this q_idx is not true, should be the last one
-      final_results.push_back(result);
+      // -------------------------------------------------------------
+    } else {
+      // ------------------- Duet ------------------------------------
 
-      // Switch buffer ( A->B, B-A)
-      cur_stream = next;
-      MyReducer::ClearBuffer(tid, cur_stream);
+      Executor exe{tid, 0};
 
-      q_data.pop();
+      while (!q_data.empty()) {
+        const auto q = q_data.front();
+
+        exe.StartQuery(q, tree.GetRoot());
+
+        const auto result_addr = MyReducer::GetResultAddr(tid, 0);
+        q_data.pop();
+      }
+
+      // -------------------------------------------------------------
     }
-
-    // When q are finished, remember to Synchronize the last bit;
-    redwood::DeviceSynchronize();
-    const auto next = MyReducer::NextStream(cur_stream);
-
-    const auto result = *MyReducer::GetResultAddr(tid, next);
-    final_results.push_back(result);
   });
 
   // -------------------------------------------------------------
