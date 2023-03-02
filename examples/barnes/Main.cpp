@@ -53,7 +53,7 @@ class Executor {
 
     // Notify Reducer to
     // In case of FPGA, it will register the anchor point (q) into the registers
-    MyReducer::SetQuery(my_tid_, my_stream_id_, q);
+    MyReducer::SetQuery(my_tid_, my_stream_id_, &my_q_);
 
     TraverseRecursive(root);
   }

@@ -20,7 +20,7 @@ struct DuetBarnesReducer
 
   static void ReleaseReducers() {}
 
-  static void SetQuery(const int tid, const int stream_id, const DataT& q) {
+  static void SetQuery(const int tid, const int stream_id, const DataT* q) {
     duet::Start(tid, q);
   }
 

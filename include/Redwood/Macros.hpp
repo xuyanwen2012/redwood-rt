@@ -1,6 +1,6 @@
 #pragma once
 
-namespace redwood {
+// namespace redwood {
 // enum class Backends {
 //   kCpu = 0,
 //   kCuda,
