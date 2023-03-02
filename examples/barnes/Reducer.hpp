@@ -91,7 +91,7 @@ struct DoubleBufferReducer
     for (int i = 0; i < kNumThreads; ++i) rhs[i].Release();
   }
 
-  static void SetQuery(const int tid, const int stream_id, const DataT q) {
+  static void SetQuery(const int tid, const int stream_id, const DataT& q) {
     rhs[tid].SetQueryPoint(stream_id, q);
   }
 

@@ -2,12 +2,10 @@
 
 #include <array>
 
-#include "../IndicesBuffer.hpp"
 #include "../LeafNodeTable.hpp"
-#include "Redwood/Core.hpp"
+#include "Redwood.hpp"
 #include "Redwood/Duet/DuetAPI.hpp"
 #include "Redwood/Kernels.hpp"
-#include "Redwood/Point.hpp"
 
 namespace rdc {
 
@@ -16,12 +14,13 @@ namespace rdc {
 constexpr auto kMaxLeafSize = 64;
 
 template <typename DataT, typename ResultT>
-struct DuetBarnesReducer {
+struct DuetBarnesReducer
+    : ReducerBase<DuetBarnesReducer<DataT, ResultT>, DataT, ResultT> {
   static void InitReducers() {}
 
   static void ReleaseReducers() {}
 
-  static void SetQuery(const int tid, const int stream_id, const DataT* q) {
+  static void SetQuery(const int tid, const int stream_id, const DataT& q) {
     duet::Start(tid, q);
   }
 
