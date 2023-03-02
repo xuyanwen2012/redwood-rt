@@ -14,8 +14,8 @@
 
 // Redwood user need to specify which reducer to use (barnes/knn) and its types
 
-// using MyReducer = rdc::DoubleBufferReducer<Point4F, float>;
-using MyReducer = rdc::DuetBarnesReducer<Point4F, float>;
+using MyReducer = rdc::DoubleBufferReducer<Point4F, float>;
+// using MyReducer = rdc::DuetBarnesReducer<Point4F, float>;
 
 struct ExecutorStats {
   int leaf_node_reduced = 0;
@@ -171,18 +171,19 @@ int main(int argc, char** argv) {
   constexpr int tid = 0;
 
   TimeTask("Traversal", [&] {
-    if constexpr (false) {
+    if constexpr (true) {
       // ------------------- CUDA ------------------------------------
 
       int cur_stream = 0;
       Executor exe[redwood::kNumStreams]{{tid, 0}, {tid, 1}};
 
+      bool init = false;
       while (!q_data.empty()) {
         const auto q = q_data.front();
 
         exe[cur_stream].StartQuery(q, tree.GetRoot());
 
-        if constexpr (false) {
+        if constexpr (true) {
           std::cout << "\tl: " << exe[cur_stream].GetStats().leaf_node_reduced
                     << "\tb: " << exe[cur_stream].GetStats().branch_node_reduced
                     << std::endl;
@@ -192,12 +193,15 @@ int main(int argc, char** argv) {
 
         // Synchronize the next stream
         const auto next = MyReducer::NextStream(cur_stream);
-        redwood::DeviceStreamSynchronize(next);
 
-        // Read results that were computed and synchronized before
-        const auto result_addr = MyReducer::GetResultAddr(tid, next);
-
-        final_results.push_back(*result_addr);
+        // Read results that were compute
+        if (init) {
+          redwood::DeviceStreamSynchronize(next);
+          const auto result_addr = MyReducer::GetResultAddr(tid, next);
+          final_results.push_back(*result_addr);
+        } else {
+          init = true;
+        }
 
         // Switch buffer ( A->B, B-A)
         cur_stream = next;

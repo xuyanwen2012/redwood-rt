@@ -68,8 +68,8 @@ struct BarnesHandler {
     return h_query[stream_id];
   }
 
-  void SetQueryPoint(const int stream_id, const DataT& q) {
-    h_query[stream_id] = q;
+  void SetQueryPoint(const int stream_id, const DataT* q) {
+    h_query[stream_id] = *q;
   }
 };
 
@@ -91,7 +91,7 @@ struct DoubleBufferReducer
     for (int i = 0; i < kNumThreads; ++i) rhs[i].Release();
   }
 
-  static void SetQuery(const int tid, const int stream_id, const DataT& q) {
+  static void SetQuery(const int tid, const int stream_id, const DataT* q) {
     rhs[tid].SetQueryPoint(stream_id, q);
   }
 
