@@ -141,7 +141,9 @@ int main(int argc, char** argv) {
   // Initialize Backend (find device etc., warmup), Reducer(double buffer), and
   // Executor(tree algorithm)
   redwood::Init();
+
   MyReducer::InitReducers();
+
   Executor::SetThetaValue(theta);
 
   // Now octree tree is comstructed, need to move leaf node data into USM
