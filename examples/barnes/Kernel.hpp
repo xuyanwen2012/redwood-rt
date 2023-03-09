@@ -7,7 +7,7 @@
 static auto rsqrtf(const float x) { return 1.0f / sqrtf(x); }
 
 struct MyFunctor {
-  float operator()(const Point4F& p, const Point4F& q) const {
+  inline float operator()(const Point4F& p, const Point4F& q) const {
     const auto dx = p.data[0] - q.data[0];
     const auto dy = p.data[1] - q.data[1];
     const auto dz = p.data[2] - q.data[2];
