@@ -19,6 +19,13 @@ namespace cg = cooperative_groups;
 
 constexpr auto kNumBlocks = 1;
 
+inline __host__ __device__ float EuclideanDistance(const float2 p,
+                                                   const float2 q) {
+  const auto dx = p.x - q.x;
+  const auto dy = p.y - q.y;
+  return sqrtf(dx * dx + dy * dy);
+}
+
 inline __host__ __device__ float HaversineDistance(const float2 p,
                                                    const float2 q) {
   float lat1 = p.x;
@@ -58,12 +65,12 @@ __device__ __forceinline__ void WorkComplete(int* com) {
 template <typename DataT, typename ResultT>
 __device__ void FunctionKernel(cg::thread_group g, DataT* u_buffer, const int n,
                                ResultT* u_result, const DataT q) {
-  // constexpr int block_threads = 1024;
-  // using BlockReduce = cub::BlockReduce<float, block_threads>;
+  constexpr int block_threads = 1024;
+  using BlockReduce = cub::BlockReduce<float, block_threads>;
 
   // This need to be a conexpr, because I am passing this as a template argument
   // for Cub library. Although is is just the same as 'g.size()'
-  // __shared__ union { BlockReduce::TempStorage reduce; } temp_storage;
+  __shared__ union { BlockReduce::TempStorage reduce; } temp_storage;
 
   const auto tid = g.thread_rank();
   const auto size = g.size();  // block_threads
@@ -71,34 +78,17 @@ __device__ void FunctionKernel(cg::thread_group g, DataT* u_buffer, const int n,
   float thread_value[1];
   thread_value[0] = 999999999999.9f;
 
-  // int global_id = tid;
-  // for (; global_id < n; global_id += size) {
-  //   const auto p = u_buffer[global_id];
-  //   const auto dist = HaversineDistance(p, q);
-  //   thread_value[0] = min(thread_value[0], dist);
-  // }
-
   int global_id = tid;
-  const auto p = u_buffer[global_id];
-  const auto dist = HaversineDistance(p, q);
-  // thread_value[0];
+  for (; global_id < n; global_id += size) {
+    const auto p = u_buffer[global_id];
+    const auto dist = EuclideanDistance(p, q);
+    thread_value[0] = min(thread_value[0], dist);
+  }
 
-  thread_value[0] = dist;
+  float aggregate =
+      BlockReduce(temp_storage.reduce).Reduce(thread_value, cub::Min());
 
-  // if (tid < 32) {
-  // printf("[%d] %f \n", tid, thread_value[0]);
-  // }
-
-  // float aggregate =
-  // BlockReduce(temp_storage.reduce).Reduce(thread_value, cub::Min());
-
-  // DEBUG for now:
-
-  // __syncthreads();
-  g.sync();
-
-  // if (tid == 0) u_result[0] = thread_value[0];
-  if (tid == 0) u_result[0] = 6666.f;
+  if (tid == 0) u_result[0] = min(u_result[0], aggregate);
 }
 
 template <typename DataT, typename ResultT>
@@ -179,7 +169,7 @@ int main() {
     auto sum = std::numeric_limits<float>::max();
 
     for (int i = 0; i < n; ++i) {
-      const auto dist = HaversineDistance(h_p_data[i], q);
+      const auto dist = EuclideanDistance(h_p_data[i], q);
       // if (i <= 32) std::cout << dist << std::endl;
       sum = std::min(sum, dist);
     }
@@ -195,33 +185,20 @@ int main() {
   PersistentKernel<float2, float>
       <<<kNumBlocks, num_threads>>>(u_buffer, num_threads, q, u_result, u_com);
 
-  const auto iterations = 1;
-  // const auto iterations = n / num_threads;
+  TimeTask("PK GPU: ", [&] {
+    const auto iterations = n / num_threads;
+    for (int i = 0; i < iterations; ++i) {
+      // std::cout << "\nIteration: (" << i << '/' << iterations << ')' <<
+      // std::endl;
+      memcpy(u_buffer, h_p_data.data() + i * num_threads,
+             sizeof(float2) * num_threads);
 
-  // std::vector<float> hhhhhh;
-  // hhhhhh.reserve(1024);
+      StartGPU(u_com);
+      WaitGPU(u_com);
+    }
+  });
 
-  for (int i = 0; i < iterations; ++i) {
-    std::cout << "\nIteration: (" << i << '/' << iterations << ')' << std::endl;
-
-    // u_buffer[0];
-    memcpy(u_buffer, h_p_data.data() + i * num_threads,
-           sizeof(float2) * num_threads);
-
-    StartGPU(u_com);
-
-    // Do something else
-
-    WaitGPU(u_com);
-
-    // hhhhhh.push_back(u_result[0]);
-
-    std::cout << "\tMin sofar: " << u_result[0] << std::endl;
-  }
-
-  // std::cout << *std::min_element(hhhhhh.begin(), hhhhhh.end()) << std::endl;
-
-  // std::cout << "\tMin sofar: " << u_result[0] << std::endl;
+  std::cout << "\tMin sofar: " << u_result[0] << std::endl;
 
   //   std::iota(u_buffer, u_buffer + n, i * n);
 
