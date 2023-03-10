@@ -61,11 +61,10 @@ __device__ __forceinline__ void WorkComplete(int* com) {
 }
 
 //--expt-relaxed-constexpr
-// auto my_min = std::numeric_limits<float>::max();
+//
 template <typename DataT, typename ResultT>
 __device__ void FunctionKernel(cg::thread_group g, DataT* u_buffer,
-                               const int valid_items, ResultT* u_result,
-                               const DataT q) {
+                               ResultT* u_result, const DataT q) {
   // This need to be a conexpr, because I am passing this as a template argument
   // for Cub library. Although is is just the same as 'g.size()'
   constexpr int block_threads = 1024;
@@ -86,12 +85,14 @@ __device__ void FunctionKernel(cg::thread_group g, DataT* u_buffer,
   DataT thread_data[items_per_thread];
   ResultT thread_value[items_per_thread];
 
-  BlockLoad(temp_storage.load).Load(u_buffer, thread_data, valid_items);
+  BlockLoad(temp_storage.load).Load(u_buffer, thread_data);
 
 #pragma unroll
   for (int i = 0; i < items_per_thread; ++i) {
     thread_value[i] = EuclideanDistance(thread_data[i], q);
   }
+
+  // g.sync();
 
   ResultT aggregate =
       BlockReduce(temp_storage.reduce).Reduce(thread_value, cub::Min());
@@ -101,7 +102,7 @@ __device__ void FunctionKernel(cg::thread_group g, DataT* u_buffer,
 }
 
 template <typename DataT, typename ResultT>
-__global__ void PersistentKernel(DataT* u_buffer, const int n, const DataT q,
+__global__ void PersistentKernel(DataT* u_buffer, const DataT q,
                                  ResultT* u_result, int* com) {
   auto cta = cg::this_thread_block();
   const auto tid = cta.thread_rank();
@@ -113,11 +114,41 @@ __global__ void PersistentKernel(DataT* u_buffer, const int n, const DataT q,
     // cancelling point
     if (com[kNumBlocks] == 1) return;
 
-    FunctionKernel(cta, u_buffer, n, u_result, q);
+    FunctionKernel(cta, u_buffer, u_result, q);
 
     if (tid == 0) WorkComplete(com);
   }
 }
+
+// template <typename DataT, typename ResultT>
+// __global__ void PersistentKernelDoubleBuffer(DataT* u_buffer_a,    //
+//                                              DataT* u_buffer_b,    //
+//                                              const int n,          //
+//                                              const DataT q,        //
+//                                              ResultT* u_result_a,  //
+//                                              ResultT* u_result_b,  //
+//                                              int* com) {
+//   auto cta = cg::this_thread_block();
+//   const auto tid = cta.thread_rank();
+
+//   // Temporary.
+//   // com[0] = buffer a status
+//   //    0 : buffer a
+//   //    1 : buffer b
+//   // com[2] = program status
+
+//   while (com[2] != 1) {
+//     if (tid == 0) WaitCPU(com);
+//     __syncthreads();
+
+//     // cancelling point
+//     if (com[2] == 1) return;
+
+//     FunctionKernel(cta, u_buffer, n, u_result, q);
+
+//     if (tid == 0) WorkComplete(com);
+//   }
+// }
 
 template <typename DataT, typename ResultT>
 __global__ void NormalKernel(DataT* d_data, const int n, const DataT q,
@@ -128,7 +159,7 @@ __global__ void NormalKernel(DataT* d_data, const int n, const DataT q,
 
   const auto iterations = n / block_threads;
   for (int i = 0; i < iterations; ++i) {
-    FunctionKernel(cta, d_data + i * block_threads, block_threads, u_result, q);
+    FunctionKernel(cta, d_data + i * block_threads, u_result, q);
   }
 }
 
@@ -142,6 +173,8 @@ void WaitGPU(int* com) {
   int sum;
   do {
     sum = 0;
+    // This is a must when I turn on -O3 optimization, otherwise the program got
+    // frozen.
     asm volatile("" ::: "memory");
     sum |= com[0];
   } while (sum != 0);
@@ -168,9 +201,17 @@ std::vector<float2> GenerateRandomPoints(const int num_points) {
 
 float2* tmp = nullptr;
 
-int main() {
+int main(int argc, char** argv) {
+  if (argc < 2) {
+    std::cerr << "Bad argument\n";
+    return EXIT_FAILURE;
+  }
+
+  const int enable_pk = atoi(argv[1]);
+
   constexpr int n = 1024 * 1024;
   constexpr int buffer_size = 1024;
+  constexpr auto num_threads = 1024;
 
   float2* u_buffer = nullptr;
   float* u_result = nullptr;
@@ -203,57 +244,50 @@ int main() {
   TimeTask("CPU Memcpy: ",
            [&] { memcpy(tmp, h_p_data.data(), sizeof(float2) * n); });
 
-  constexpr auto num_threads = 1024;
-  const auto valid_items = 1024;
-  PersistentKernel<float2, float>
-      <<<kNumBlocks, num_threads>>>(u_buffer, valid_items, q, u_result, u_com);
+  if (enable_pk) {
+    // Launching the Persistent Kernel at very beginning.
+    PersistentKernel<float2, float>
+        <<<kNumBlocks, num_threads>>>(u_buffer, q, u_result, u_com);
 
-  TimeTask("PK GPU: ", [&] {
-    const auto iterations = n / num_threads;
-    for (int i = 0; i < iterations; ++i) {
-      // std::cout << "\nIteration: (" << i << '/' << iterations << ')' <<
-      // std::endl;
-      memcpy(u_buffer, h_p_data.data() + i * num_threads,
-             sizeof(float2) * num_threads);
+    TimeTask("PK GPU: ", [&] {
+      const auto iterations = n / num_threads;
+      for (int i = 0; i < iterations; ++i) {
+        // std::cout << "\nIteration: (" << i << '/' << iterations << ')' <<
+        // std::endl;
+        memcpy(u_buffer, h_p_data.data() + i * num_threads,
+               sizeof(float2) * num_threads);
 
-      StartGPU(u_com);
+        StartGPU(u_com);
 
-      WaitGPU(u_com);
-    }
-  });
+        // CPU Works here...
 
-  EndGPU(u_com);
+        WaitGPU(u_com);
+      }
+    });
 
-  float2* d_data = nullptr;
-  HANDLE_ERROR(cudaMalloc((void**)&d_data, sizeof(float2) * n));
-  HANDLE_ERROR(cudaDeviceSynchronize());
+    EndGPU(u_com);
 
-  TimeTask("Normal GPU (1 block) memcpy: ", [&] {
-    HANDLE_ERROR(cudaMemcpy(d_data, h_p_data.data(), sizeof(float2) * n,
-                            cudaMemcpyHostToDevice));
-  });
+    std::cout << "\tu_result: " << u_result[0] << std::endl;
+    HANDLE_ERROR(cudaFreeHost(u_buffer));
+    HANDLE_ERROR(cudaFreeHost(u_com));
 
-  TimeTask("Normal GPU (1 block) compute: ", [&] {
-    NormalKernel<<<kNumBlocks, num_threads>>>(d_data, n, q, u_result_2);
+  } else {
+    float2* d_data = nullptr;
+    HANDLE_ERROR(cudaMalloc((void**)&d_data, sizeof(float2) * n));
     HANDLE_ERROR(cudaDeviceSynchronize());
-  });
 
-  std::cout << "\tu_result: " << u_result[0] << std::endl;
-  std::cout << "\tu_result_2: " << u_result_2[0] << std::endl;
+    TimeTask("Normal GPU (1 block) memcpy: ", [&] {
+      HANDLE_ERROR(cudaMemcpy(d_data, h_p_data.data(), sizeof(float2) * n,
+                              cudaMemcpyHostToDevice));
+    });
 
-  //   std::iota(u_buffer, u_buffer + n, i * n);
+    TimeTask("Normal GPU (1 block) compute: ", [&] {
+      NormalKernel<<<kNumBlocks, num_threads>>>(d_data, n, q, u_result_2);
+      HANDLE_ERROR(cudaDeviceSynchronize());
+    });
 
-  //   for (int i = 0; i < 8; ++i) {
-  //     std::cout << i << ": " << u_buffer[i] << std::endl;
-  //   }
-  //   std::cout << "..." << std::endl;
-  //   for (int i = n - 8; i < n; ++i) {
-  //     std::cout << i << ": " << u_buffer[i] << std::endl;
-  //   }
-  // }
-
-  HANDLE_ERROR(cudaFreeHost(u_buffer));
-  HANDLE_ERROR(cudaFreeHost(u_com));
+    std::cout << "\tu_result_2: " << u_result_2[0] << std::endl;
+  }
 
   return 0;
 }

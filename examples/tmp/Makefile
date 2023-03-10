@@ -1,5 +1,7 @@
 NVCC = $(shell which nvcc)
-NVCCFLAGS = -std=c++14 
+NVCCFLAGS := -std=c++14 
+NVCCFLAGS += --expt-relaxed-constexpr
+# -O2 -Xptxas -O2 
 # -O3 -Xptxas -O3 
 
 INCLUDES += -I../../accelerator/cuda/extern/cub-1.17.2/ -I../../accelerator/cuda/extern/thrust-1.17.2/
