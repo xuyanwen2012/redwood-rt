@@ -19,50 +19,40 @@ namespace cg = cooperative_groups;
 
 constexpr auto kNumBlocks = 1;
 
-inline __host__ __device__ float EuclideanDistance(const float2 p,
-                                                   const float2 q) {
-  const auto dx = p.x - q.x;
-  const auto dy = p.y - q.y;
-  return sqrtf(dx * dx + dy * dy);
-}
-
-inline __host__ __device__ float HaversineDistance(const float2 p,
-                                                   const float2 q) {
-  auto lat1 = p.x;
-  auto lat2 = q.x;
-  const auto lon1 = p.y;
-  const auto lon2 = q.y;
-
-  const auto dLat = (lat2 - lat1) * M_PI / 180.0f;
-  const auto dLon = (lon2 - lon1) * M_PI / 180.0f;
-
-  // convert to radians
-  lat1 = lat1 * M_PI / 180.0f;
-  lat2 = lat2 * M_PI / 180.0f;
-
-  // apply formula
-  float a = powf(sinf(dLat / 2), 2) +
-            powf(sinf(dLon / 2), 2) * cosf(lat1) * cosf(lat2);
-  constexpr float rad = 6371;
-  float c = 2 * asinf(sqrtf(a));
-  return rad * c;
-}
-
-__device__ __forceinline__ void WaitCPU(int* com) {
-  int block_id = blockIdx.x;
-  while (com[block_id] != 1 && com[kNumBlocks] != 1) {
-    __threadfence();
+struct EuclideanFunctor {
+  __host__ __device__ __forceinline__ float operator()(const float2& p,
+                                                       const float2& q) const {
+    const auto dx = p.x - q.x;
+    const auto dy = p.y - q.y;
+    return sqrtf(dx * dx + dy * dy);
   }
-}
+};
 
-__device__ __forceinline__ void WorkComplete(int* com) {
-  int block_id = blockIdx.x;
-  com[block_id] = 0;
-}
+struct HaversineFunctor {
+  __host__ __device__ __forceinline__ float operator()(float2&& p,
+                                                       float2&& q) const {
+    auto lat1 = p.x;
+    auto lat2 = q.x;
+    const auto lon1 = p.y;
+    const auto lon2 = q.y;
 
-//--expt-relaxed-constexpr
-//
-template <typename DataT, typename ResultT>
+    const auto dLat = (lat2 - lat1) * M_PI / 180.0f;
+    const auto dLon = (lon2 - lon1) * M_PI / 180.0f;
+
+    // convert to radians
+    lat1 = lat1 * M_PI / 180.0f;
+    lat2 = lat2 * M_PI / 180.0f;
+
+    // apply formula
+    float a = powf(sinf(dLat / 2), 2) +
+              powf(sinf(dLon / 2), 2) * cosf(lat1) * cosf(lat2);
+    constexpr float rad = 6371;
+    float c = 2 * asinf(sqrtf(a));
+    return rad * c;
+  }
+};
+
+template <typename DataT, typename ResultT, typename ReductionOp>
 __device__ void FunctionKernel(cg::thread_group g, DataT* u_buffer,
                                ResultT* u_result, const DataT q) {
   // This need to be a conexpr, because I am passing this as a template argument
@@ -74,6 +64,8 @@ __device__ void FunctionKernel(cg::thread_group g, DataT* u_buffer,
   using BlockLoad = cub::BlockLoad<DataT, block_threads, items_per_thread,
                                    cub::BLOCK_LOAD_STRIPED>;
   using BlockReduce = cub::BlockReduce<ResultT, block_threads>;
+
+  constexpr auto functor = ReductionOp();
 
   __shared__ union {
     typename BlockLoad::TempStorage load;
@@ -89,10 +81,8 @@ __device__ void FunctionKernel(cg::thread_group g, DataT* u_buffer,
 
 #pragma unroll
   for (int i = 0; i < items_per_thread; ++i) {
-    thread_value[i] = EuclideanDistance(thread_data[i], q);
+    thread_value[i] = functor(thread_data[i], q);
   }
-
-  // g.sync();
 
   ResultT aggregate =
       BlockReduce(temp_storage.reduce).Reduce(thread_value, cub::Min());
@@ -101,7 +91,21 @@ __device__ void FunctionKernel(cg::thread_group g, DataT* u_buffer,
   if (tid == 0) u_result[0] = min(u_result[0], aggregate);
 }
 
-template <typename DataT, typename ResultT>
+__device__ __forceinline__ void WaitCPU(int* com) {
+  int block_id = blockIdx.x;
+  while (com[block_id] != 1 && com[kNumBlocks] != 1) {
+    // __threadfence_system(); ?
+    __threadfence();
+  }
+}
+
+__device__ __forceinline__ void WorkComplete(int* com) {
+  int block_id = blockIdx.x;
+  com[block_id] = 0;
+}
+
+template <typename DataT, typename ResultT,
+          typename ReductionOp = EuclideanFunctor>
 __global__ void PersistentKernel(DataT* u_buffer, const DataT q,
                                  ResultT* u_result, int* com) {
   auto cta = cg::this_thread_block();
@@ -114,7 +118,7 @@ __global__ void PersistentKernel(DataT* u_buffer, const DataT q,
     // cancelling point
     if (com[kNumBlocks] == 1) return;
 
-    FunctionKernel(cta, u_buffer, u_result, q);
+    FunctionKernel<DataT, ResultT, ReductionOp>(cta, u_buffer, u_result, q);
 
     if (tid == 0) WorkComplete(com);
   }
@@ -150,7 +154,8 @@ __global__ void PersistentKernel(DataT* u_buffer, const DataT q,
 //   }
 // }
 
-template <typename DataT, typename ResultT>
+template <typename DataT, typename ResultT,
+          typename ReductionOp = EuclideanFunctor>
 __global__ void NormalKernel(DataT* d_data, const int n, const DataT q,
                              ResultT* u_result) {
   auto cta = cg::this_thread_block();
@@ -159,24 +164,22 @@ __global__ void NormalKernel(DataT* d_data, const int n, const DataT q,
 
   const auto iterations = n / block_threads;
   for (int i = 0; i < iterations; ++i) {
-    FunctionKernel(cta, d_data + i * block_threads, u_result, q);
+    FunctionKernel<DataT, ResultT, ReductionOp>(cta, d_data + i * block_threads,
+                                                u_result, q);
   }
 }
 
 void StartGPU(int* com) {
-  // printf("StartGPU\n");
-  com[0] = 1;
+  // atomic?
+  for (int i = 0; i < kNumBlocks; ++i) com[i] = 1;
 }
 
 void WaitGPU(int* com) {
-  // printf("WaitGPU\n");
   int sum;
   do {
     sum = 0;
-    // This is a must when I turn on -O3 optimization, otherwise the program got
-    // frozen.
     asm volatile("" ::: "memory");
-    sum |= com[0];
+    for (int i = 0; i < kNumBlocks; ++i) sum |= com[i];
   } while (sum != 0);
 }
 
@@ -232,8 +235,9 @@ int main(int argc, char** argv) {
   TimeTask("CPU Compute: ", [&] {
     auto sum = std::numeric_limits<float>::max();
 
+    constexpr auto functor = EuclideanFunctor();
     for (int i = 0; i < n; ++i) {
-      const auto dist = EuclideanDistance(h_p_data[i], q);
+      const auto dist = functor(h_p_data[i], q);
       sum = std::min(sum, dist);
     }
 
@@ -245,9 +249,8 @@ int main(int argc, char** argv) {
            [&] { memcpy(tmp, h_p_data.data(), sizeof(float2) * n); });
 
   if (enable_pk) {
-    // Launching the Persistent Kernel at very beginning.
-    PersistentKernel<float2, float>
-        <<<kNumBlocks, num_threads>>>(u_buffer, q, u_result, u_com);
+    // Launching the PK only once
+    PersistentKernel<<<kNumBlocks, num_threads>>>(u_buffer, q, u_result, u_com);
 
     TimeTask("PK GPU: ", [&] {
       const auto iterations = n / num_threads;
