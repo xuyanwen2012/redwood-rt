@@ -19,6 +19,19 @@ namespace cg = cooperative_groups;
 
 constexpr auto kNumBlocks = 1;
 
+// template <typename T>
+// void check(T result, char const* const func, const char* const file,
+//            int const line) {
+//   if (result) {
+//     fprintf(stderr, "CUDA error at %s:%d code=%d(%s) \"%s\" \n", file, line,
+//             static_cast<unsigned int>(result), _cudaGetErrorEnum(result),
+//             func);
+//     exit(EXIT_FAILURE);
+//   }
+// }
+
+// #define checkCudaErrors(val) check((val), #val, __FILE__, __LINE__)
+
 struct EuclideanFunctor {
   __host__ __device__ __forceinline__ float operator()(const float2& p,
                                                        const float2& q) const {
@@ -28,9 +41,10 @@ struct EuclideanFunctor {
   }
 };
 
+// too many resources requested for launch
 struct HaversineFunctor {
-  __host__ __device__ __forceinline__ float operator()(float2&& p,
-                                                       float2&& q) const {
+  __host__ __device__ __forceinline__ float operator()(const float2& p,
+                                                       const float2& q) const {
     auto lat1 = p.x;
     auto lat2 = q.x;
     const auto lon1 = p.y;
@@ -164,6 +178,7 @@ __global__ void NormalKernel(DataT* d_data, const int n, const DataT q,
 
   const auto iterations = n / block_threads;
   for (int i = 0; i < iterations; ++i) {
+    if (tid == 0) printf("gpu iteration (%d/%d)\n", i, iterations);
     FunctionKernel<DataT, ResultT, ReductionOp>(cta, d_data + i * block_threads,
                                                 u_result, q);
   }
@@ -218,16 +233,13 @@ int main(int argc, char** argv) {
 
   float2* u_buffer = nullptr;
   float* u_result = nullptr;
-  float* u_result_2 = nullptr;
   int* u_com = nullptr;
 
   cudaAllocMapped(&u_buffer, sizeof(float2) * buffer_size);
   cudaAllocMapped(&u_result, sizeof(float) * 1);
-  cudaAllocMapped(&u_result_2, sizeof(float) * 1);
   cudaAllocMapped(&u_com, sizeof(int) * (kNumBlocks + 1));
 
   u_result[0] = std::numeric_limits<float>::max();
-  u_result_2[0] = std::numeric_limits<float>::max();
 
   auto h_p_data = GenerateRandomPoints(n);
   const float2 q{0.0f, 0.0f};
@@ -235,7 +247,7 @@ int main(int argc, char** argv) {
   TimeTask("CPU Compute: ", [&] {
     auto sum = std::numeric_limits<float>::max();
 
-    constexpr auto functor = EuclideanFunctor();
+    constexpr auto functor = HaversineFunctor();
     for (int i = 0; i < n; ++i) {
       const auto dist = functor(h_p_data[i], q);
       sum = std::min(sum, dist);
@@ -270,7 +282,6 @@ int main(int argc, char** argv) {
 
     EndGPU(u_com);
 
-    std::cout << "\tu_result: " << u_result[0] << std::endl;
     HANDLE_ERROR(cudaFreeHost(u_buffer));
     HANDLE_ERROR(cudaFreeHost(u_com));
 
@@ -285,12 +296,17 @@ int main(int argc, char** argv) {
     });
 
     TimeTask("Normal GPU (1 block) compute: ", [&] {
-      NormalKernel<<<kNumBlocks, num_threads>>>(d_data, n, q, u_result_2);
+      NormalKernel<float2, float, HaversineFunctor>
+          <<<kNumBlocks, num_threads>>>(d_data, n, q, u_result);
+      HANDLE_ERROR(cudaGetLastError());
+
       HANDLE_ERROR(cudaDeviceSynchronize());
     });
-
-    std::cout << "\tu_result_2: " << u_result_2[0] << std::endl;
   }
+
+  std::cout << "\tu_result: " << u_result[0] << std::endl;
+
+  HANDLE_ERROR(cudaFreeHost(u_result));
 
   return 0;
 }
