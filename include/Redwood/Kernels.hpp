@@ -14,6 +14,14 @@ void ComputeOneBatchAsync(const int* u_leaf_indices, /**/
                           Point4F q,                 /**/
                           int stream_id);
 
+void ComputeOneBatchAsync_PB(const int* u_leaf_indices,  /**/
+                          const int num_active_leafs, /**/
+                          float* out,                 /**/
+                          const Point4F* u_lnt_data,  /**/
+                          const int* u_lnt_sizes,     /**/
+                          const Point4F q,            /**/
+                          const int stream_id,
+                          const int pb_idx);
 // Knn
 void ProcessKnnAsync(const int* u_leaf_indices, /**/
                      const Point4F* u_q_points, /**/

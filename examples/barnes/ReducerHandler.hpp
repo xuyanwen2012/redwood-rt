@@ -113,10 +113,10 @@ inline void LuanchKernelAsync(const int tid, const int stream_id) {
   redwood::ComputeOneBatchAsync(
       rhs[tid].UsmBuffer(stream_id).Data(), /* Buffered data to process */
       static_cast<int>(rhs[tid].UsmBuffer(stream_id).Size()), /* / */
-      rhs[tid].UsmResultAddr(stream_id),    /* Return Addr */
-      rdc::LntDataAddr(),                   /* Shared data */
-      nullptr,                              /* Ignore for now */
-      rhs[tid].QueryPoint(stream_id),       /* Single data */
+      rhs[tid].UsmResultAddr(stream_id),                      /* Return Addr */
+      rdc::LntDataAddr(),                                     /* Shared data */
+      nullptr,                        /* Ignore for now */
+      rhs[tid].QueryPoint(stream_id), /* Single data */
       stream_id);
 }
 
