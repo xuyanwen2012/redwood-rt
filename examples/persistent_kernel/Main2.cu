@@ -193,14 +193,11 @@ int main(int argc, char** argv) {
     cudaGetDeviceProperties(&prop, i);
     printf("Device Number: %d\n", i);
     printf("  Device name: %s\n", prop.name);
-    printf("  Memory Clock Rate (KHz): %d\n",
-    prop.memoryClockRate);
-printf("  Memory Bus Width (bits): %d\n",
-    prop.memoryBusWidth);
-printf("  Peak Memory Bandwidth (GB/s): %f\n\n",
-    2.0*prop.memoryClockRate*(prop.memoryBusWidth/8)/1.0e6);
-    printf("  concurrentManagedAccess: %d\n", prop.concurrentManagedAccess );
-
+    printf("  Memory Clock Rate (KHz): %d\n", prop.memoryClockRate);
+    printf("  Memory Bus Width (bits): %d\n", prop.memoryBusWidth);
+    printf("  Peak Memory Bandwidth (GB/s): %f\n\n",
+           2.0 * prop.memoryClockRate * (prop.memoryBusWidth / 8) / 1.0e6);
+    printf("  concurrentManagedAccess: %d\n", prop.concurrentManagedAccess);
   }
 
   const int enable_pk = atoi(argv[1]);
@@ -215,18 +212,18 @@ printf("  Peak Memory Bandwidth (GB/s): %f\n\n",
 
   cudaStream_t stream1;
   cudaStreamCreate(&stream1);
-  
+
   cudaMallocManaged(&u_buffer, sizeof(float2) * buffer_size);
   cudaMallocManaged(&u_result, sizeof(float) * 1);
   // cudaMallocManaged(&u_com, sizeof(int) * (kNumBlocks + 1));
 
   // cudaMemAdvise(&u_result, dataSize, cudaMemAdviseSetReadMostly, 0);
 
-  cudaStreamAttachMemAsync(stream1, &u_buffer, 0, cudaMemAttachGlobal );
-  cudaStreamAttachMemAsync(stream1, &u_result, 0, cudaMemAttachGlobal );
+  cudaStreamAttachMemAsync(stream1, &u_buffer, 0, cudaMemAttachGlobal);
+  cudaStreamAttachMemAsync(stream1, &u_result, 0, cudaMemAttachGlobal);
   // cudaStreamAttachMemAsync(stream1, &u_com, 0, cudaMemAttachGlobal );
-  cudaDeviceSynchronize(); 
-  
+  cudaDeviceSynchronize();
+
   // cudaAllocMapped(&u_buffer, sizeof(float2) * buffer_size);
   // cudaAllocMapped(&u_result, sizeof(float) * 1);
   cudaAllocMapped(&u_com, sizeof(int) * (kNumBlocks + 1));
@@ -254,7 +251,8 @@ printf("  Peak Memory Bandwidth (GB/s): %f\n\n",
 
   if (enable_pk) {
     // Launching the PK only once
-    PersistentKernel<<<kNumBlocks, num_threads, 0, stream1>>>(u_buffer, q, u_result, u_com);
+    PersistentKernel<<<kNumBlocks, num_threads, 0, stream1>>>(u_buffer, q,
+                                                              u_result, u_com);
 
     TimeTask("PK GPU: ", [&] {
       const auto iterations = n / num_threads;
