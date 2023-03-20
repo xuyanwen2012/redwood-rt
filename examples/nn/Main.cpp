@@ -230,7 +230,8 @@ int main(int argc, char** argv) {
       "p,thread", "Num Thread", cxxopts::value<int>()->default_value("1"))(
       "l,leaf", "Leaf node size", cxxopts::value<int>()->default_value("32"))(
       "b,batch_size", "Batch Size", cxxopts::value<int>()->default_value("32"))(
-      "h,help", "Print usage");
+      "c,cpu", "Enable Cpu Baseline",
+      cxxopts::value<bool>()->default_value("false"))("h,help", "Print usage");
 
   options.parse_positional({"file", "query"});
 
@@ -252,6 +253,7 @@ int main(int argc, char** argv) {
   const auto batch_size = result["batch_size"].as<int>();
   const auto m = result["query"].as<int>();
   const auto num_threads = result["thread"].as<int>();
+  const auto cpu = result["cpu"].as<bool>();
 
   // Load file
   const auto [in, n] = mmap_file<Point4F>(data_file);
@@ -263,9 +265,8 @@ int main(int argc, char** argv) {
   std::cout << "\tBatch Size: " << batch_size << '\n';
   std::cout << "\tLeaf Size: " << max_leaf_size << '\n';
   std::cout << "\tNum Threads: " << num_threads << '\n';
+  std::cout << "\tRunning Cpu: " << std::boolalpha << cpu << '\n';
   std::cout << std::endl;
-
-  exit(0);
 
   // Inspect input data is correct
   for (int i = 0; i < 10; ++i) {
@@ -314,20 +315,24 @@ int main(int argc, char** argv) {
   std::vector<float> final_results;
   final_results.reserve(m);
 
-  TimeTask("Traversal", [&] {
-    if constexpr (constexpr auto cpu = false; cpu) {
-      // Just CPU traversal
-
+  if (cpu) {
+    TimeTask("Cpu Traversal", [&] {
       CpuExecutor exe{tid};
 
-      const auto q = q_data.front();
-      q_data.pop();
+      while (!q_data.empty()) {
+        const auto q = q_data.front();
+        q_data.pop();
 
-      exe.StartQuery(q);
+        exe.StartQuery(q);
 
-      exe.k_set_.DebugPrint();
+        exe.k_set_.DebugPrint();
+      }
 
-    } else {
+      // final_results.push_back(exe.k_set_.WorstDist());
+    });
+
+  } else {
+    TimeTask("PAPU Traversal", [&] {
       // Use redwood runtime
       std::vector<Executor> exe[rdc::kNumStreams];
       for (int stream_id = 0; stream_id < rdc::kNumStreams; ++stream_id) {
@@ -342,9 +347,9 @@ int main(int argc, char** argv) {
         for (auto& exe : exe[cur_stream]) {
           if (exe.Finished()) {
             // Results are printed here
-            // std::cout << exe.k_set_->WorstDist() << std::endl;
+            std::cout << exe.k_set_->WorstDist() << std::endl;
 
-            final_results.push_back(exe.k_set_->WorstDist());
+            // final_results.push_back(exe.k_set_->WorstDist());
 
             // Make there is task in the queue
             if (q_data.empty()) {
@@ -376,19 +381,17 @@ int main(int argc, char** argv) {
         cur_stream = next;
         rdc::ClearBuffer(tid, cur_stream);
       }
-    }
-  });
+    });
 
-  // TODO: Handle Remaining
-
-  // rdc::LuanchKernelAsync(tid, cur_stream);
-  // const auto next = rdc::NextStream(cur_stream);
-  // redwood::DeviceStreamSynchronize(next);
-
-  for (int i = 0; i < 32; ++i) {
-    const auto q = final_results[i];
-    std::cout << i << ": " << q << std::endl;
+    // remove dummy data
+    // final_results.erase(final_results.begin(),
+    // final_results.begin() + batch_size);
   }
+
+  // for (int i = 0; i < m; ++i) {
+  //   const auto q = final_results[i];
+  //   std::cout << i << ": " << q << std::endl;
+  // }
 
   rdc::ReleaseReducers();
   return EXIT_SUCCESS;
