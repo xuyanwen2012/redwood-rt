@@ -12,6 +12,7 @@
 #include "../knn/KDTree.hpp"
 #include "../knn/Kernel.hpp"
 #include "../knn/KnnSet.hpp"
+#include "AppParams.hpp"
 #include "ReducerHandler.hpp"
 #include "Redwood/Core.hpp"
 
@@ -47,7 +48,7 @@ class Executor {
     u_my_result_addr_ = base_addr + my_id;
 
     // std::cout << "\tCreated " << my_id << ": at addr " << u_my_result_addr_
-    //           << std::endl;
+    // << std::endl;
   }
 
   _NODISCARD bool Finished() const {
@@ -182,8 +183,6 @@ class CpuExecutor {
  private:
   void TraversalRecursive(const kdt::Node* cur) {
     if (cur->IsLeaf()) {
-      // k_set_->DebugPrint();
-
       const auto leaf_addr = rdc::LntDataAddrAt(cur->uid);
       for (int i = 0; i < tree_ref->GetParams().leaf_max_size; ++i) {
         const float dist = KernelFunc(leaf_addr[i], my_query_point_);
@@ -229,7 +228,8 @@ int main(int argc, char** argv) {
       "q,query", "Num to Query", cxxopts::value<int>()->default_value("16384"))(
       "p,thread", "Num Thread", cxxopts::value<int>()->default_value("1"))(
       "l,leaf", "Leaf node size", cxxopts::value<int>()->default_value("32"))(
-      "b,batch_size", "Batch Size", cxxopts::value<int>()->default_value("32"))(
+      "b,batch_size", "Batch Size",
+      cxxopts::value<int>()->default_value("1024"))(
       "c,cpu", "Enable Cpu Baseline",
       cxxopts::value<bool>()->default_value("false"))("h,help", "Print usage");
 
@@ -249,24 +249,16 @@ int main(int argc, char** argv) {
   }
 
   const auto data_file = result["file"].as<std::string>();
-  const auto max_leaf_size = result["leaf"].as<int>();
-  const auto batch_size = result["batch_size"].as<int>();
-  const auto m = result["query"].as<int>();
-  const auto num_threads = result["thread"].as<int>();
-  const auto cpu = result["cpu"].as<bool>();
+  app_params.max_leaf_size = result["leaf"].as<int>();
+  app_params.batch_size = result["batch_size"].as<int>();
+  app_params.num_threads = result["thread"].as<int>();
+  app_params.m = result["query"].as<int>();
+  app_params.cpu = result["cpu"].as<bool>();
 
   // Load file
   const auto [in, n] = mmap_file<Point4F>(data_file);
 
-  std::cout << "Application Parameters" << '\n';
-  std::cout << "\tFile: " << data_file << '\n';
-  std::cout << "\tN: " << n << '\n';
-  std::cout << "\tM: " << m << '\n';
-  std::cout << "\tBatch Size: " << batch_size << '\n';
-  std::cout << "\tLeaf Size: " << max_leaf_size << '\n';
-  std::cout << "\tNum Threads: " << num_threads << '\n';
-  std::cout << "\tRunning Cpu: " << std::boolalpha << cpu << '\n';
-  std::cout << std::endl;
+  std::cout << app_params << std::endl;
 
   // Inspect input data is correct
   for (int i = 0; i < 10; ++i) {
@@ -274,7 +266,7 @@ int main(int argc, char** argv) {
   }
 
   std::cout << "Building Tree..." << std::endl;
-  const kdt::KdtParams params{max_leaf_size};
+  const kdt::KdtParams params{app_params.max_leaf_size};
   auto tree = std::make_shared<kdt::KdTree>(params, in, n);
   tree_ref = tree;
 
@@ -283,7 +275,7 @@ int main(int argc, char** argv) {
 
   // Now octree tree is comstructed, need to move leaf node data into USM
   const auto num_leaf_nodes = tree->GetStats().num_leaf_nodes;
-  rdc::AllocateLeafNodeTable(num_leaf_nodes, max_leaf_size, false);
+  rdc::AllocateLeafNodeTable(num_leaf_nodes, app_params.max_leaf_size, false);
   tree->LoadPayload(rdc::LntDataAddr());
 
   // TODO: figure out a better way, not important right now
@@ -297,38 +289,24 @@ int main(int argc, char** argv) {
   };
 
   std::queue<Point4F> q_data;
-  for (int i = 0; i < m; ++i) q_data.push(rand_point4f());
+  for (int i = 0; i < app_params.m; ++i) q_data.push(rand_point4f());
 
   std::cout << "Start Traversal " << std::endl;
 
-  // Example:
-  //   Created 0: at addr 0x100c60000
-  //   Created 1: at addr 0x100c60080
-  //   Created 2: at addr 0x100c60100
-  //   Created 3: at addr 0x100c60180
-  //   Created 4: at addr 0x100c60200
-  //   Created 5: at addr 0x100c60280
-  //   ...
-  //
   constexpr int tid = 0;
 
   std::vector<float> final_results;
-  final_results.reserve(m);
+  final_results.reserve(app_params.m);
 
-  if (cpu) {
+  if (app_params.cpu) {
     TimeTask("Cpu Traversal", [&] {
       CpuExecutor exe{tid};
-
       while (!q_data.empty()) {
         const auto q = q_data.front();
         q_data.pop();
-
         exe.StartQuery(q);
-
-        exe.k_set_.DebugPrint();
+        final_results.push_back(exe.k_set_.WorstDist());
       }
-
-      // final_results.push_back(exe.k_set_.WorstDist());
     });
 
   } else {
@@ -336,20 +314,20 @@ int main(int argc, char** argv) {
       // Use redwood runtime
       std::vector<Executor> exe[rdc::kNumStreams];
       for (int stream_id = 0; stream_id < rdc::kNumStreams; ++stream_id) {
-        exe[stream_id].reserve(batch_size);
-        for (int i = 0; i < batch_size; ++i) {
+        exe[stream_id].reserve(app_params.batch_size);
+        for (int i = 0; i < app_params.batch_size; ++i) {
           exe[stream_id].emplace_back(tid, stream_id, i);
         }
       }
 
+      // During the initial iteration, we can assume they are all finished
       int cur_stream = 0;
       while (!q_data.empty()) {
         for (auto& exe : exe[cur_stream]) {
           if (exe.Finished()) {
             // Results are printed here
-            std::cout << exe.k_set_->WorstDist() << std::endl;
-
-            // final_results.push_back(exe.k_set_->WorstDist());
+            // std::cout << exe.k_set_->WorstDist() << std::endl;
+            final_results.push_back(exe.k_set_->WorstDist());
 
             // Make there is task in the queue
             if (q_data.empty()) {
@@ -370,28 +348,17 @@ int main(int argc, char** argv) {
         const auto next = rdc::NextStream(cur_stream);
         redwood::DeviceStreamSynchronize(next);
 
-        // We could get results now
-        // const auto result = rdc::GetResultValueUnchecked<float>(tid, next);
-        // exe
-
-        // Todo: this q_idx is not true, should be the last one
-        // final_results.push_back(result);
-
         // Switch buffer ( A->B, B-A)
         cur_stream = next;
         rdc::ClearBuffer(tid, cur_stream);
       }
     });
-
-    // remove dummy data
-    // final_results.erase(final_results.begin(),
-    // final_results.begin() + batch_size);
   }
 
-  // for (int i = 0; i < m; ++i) {
-  //   const auto q = final_results[i];
-  //   std::cout << i << ": " << q << std::endl;
-  // }
+  for (int i = 0; i < 32; ++i) {
+    const auto q = final_results[i];
+    std::cout << i << ": " << q << std::endl;
+  }
 
   rdc::ReleaseReducers();
   return EXIT_SUCCESS;

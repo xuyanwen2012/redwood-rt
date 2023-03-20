@@ -20,7 +20,8 @@ void ComputeOneBatchAsync_PB(const int* u_leaf_indices,  /**/
                              const Point4F* u_lnt_data,  /**/
                              const int* u_lnt_sizes,     /**/
                              const Point4F q,            /**/
-                             const int stream_id, const int pb_idx);
+                             const int stream_id,        /**/
+                             const int pb_idx);
 // Knn
 void ProcessKnnAsync(const int* u_leaf_indices, /**/
                      const Point4F* u_q_points, /**/
@@ -29,5 +30,13 @@ void ProcessKnnAsync(const int* u_leaf_indices, /**/
                      const Point4F* u_lnt_data, /**/
                      const int* u_lnt_sizes,    /**/
                      int stream_id);
+
+void ProcessNnAsync(const int* u_leaf_indices, /**/
+                    const Point4F* u_q_points, /**/
+                    int num_active_leafs,      /**/
+                    float* out,                /* stream base addr */
+                    const Point4F* u_lnt_data, /**/
+                    const int* u_lnt_sizes,    /**/
+                    int max_leaf_size, int stream_id);
 
 }  // namespace redwood

@@ -110,4 +110,12 @@ void ProcessKnnAsync(const int* u_leaf_indices,  /**/
                      const int* u_lnt_sizes,     /**/
                      const int stream_id) {}
 
+void ProcessNnAsync(const int* u_leaf_indices,  /**/
+                    const Point4F* u_q_points,  /**/
+                    const int num_active_leafs, /**/
+                    float* out,                 /**/
+                    const Point4F* u_lnt_data,  /**/
+                    const int* u_lnt_sizes,     /**/
+                    int max_leaf_size, const int stream_id) {}
+
 }  // namespace redwood

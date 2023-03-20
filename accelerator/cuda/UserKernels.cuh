@@ -4,6 +4,7 @@
 #include <device_launch_parameters.h>
 
 #include <cub/cub.cuh>
+#include <limits>
 
 #include "Redwood/Point.hpp"
 
@@ -149,7 +150,6 @@ __global__ void CudaBarnesHut(const int* u_leaf_indices,
   }
 }
 
-// Debug Kernels are used to check if results are correct.
 template <int LeafSize>
 __global__ void CudaKnnDebug(const int* u_leaf_indices,  /**/
                              const Point4F* u_q_points,  /**/
@@ -198,5 +198,34 @@ __global__ void CudaKnnDebug(const int* u_leaf_indices,  /**/
   // Write back
   for (int i = 0; i < kK; ++i) {
     outs[tid * kK + i] = my_mins[i];
+  }
+}
+
+// Debug Kernels are used to check if results are correct.
+template <int LeafSize>
+__global__ void CudaNnDebug(const int* u_leaf_indices,  /**/
+                            const Point4F* u_q_points,  /**/
+                            const int num_active_leafs, /**/
+                            float* outs,                /* */
+                            const Point4F* u_lnt_data,  /**/
+                            const int* u_lnt_sizes) {
+  auto cta = cg::this_thread_block();
+  const auto tid = cta.thread_rank();
+
+  if (tid == 0) {
+    for (int i = 0; i < num_active_leafs; ++i) {
+      const auto leaf_id_to_load = u_leaf_indices[i];
+      const auto q = u_q_points[i];
+      auto my_min = std::numeric_limits<float>::max();
+
+      for (int j = 0; j < LeafSize; ++j) {
+        const auto p = u_lnt_data[leaf_id_to_load * LeafSize + j];
+        const auto dist = KernelFuncKnn(p, q);
+        my_min = min(my_min, dist);
+      }
+
+      outs[i] = my_min;
+      // outs[i] = min(outs[i], my_min);
+    }
   }
 }

@@ -1,5 +1,5 @@
 NVCC = $(shell which nvcc)
-NVCCFLAGS = -std=c++14 -O3 -Xptxas -O3 
+NVCCFLAGS = -std=c++14 -O3 -Xptxas -O3 --expt-relaxed-constexpr
 
 INCLUDES := -I../../include/
 INCLUDES += -I./extern/cub-1.17.2/ -I./extern/thrust-1.17.2/
