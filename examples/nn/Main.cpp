@@ -8,6 +8,7 @@
 
 #include "../LoadFile.hpp"
 #include "../Utils.hpp"
+#include "../cxxopts.hpp"
 #include "../knn/KDTree.hpp"
 #include "../knn/Kernel.hpp"
 #include "../knn/KnnSet.hpp"
@@ -222,16 +223,49 @@ class CpuExecutor {
 };
 
 int main(int argc, char** argv) {
-  if (argc < 2) {
-    std::cerr << "requires an input file (\"data/input_nn_1m_4f.dat\")\n";
-    return EXIT_FAILURE;
+  cxxopts::Options options("Nearest Neighbor (NN)",
+                           "Redwood NN demo implementation");
+  options.add_options()("f,file", "File name", cxxopts::value<std::string>())(
+      "q,query", "Num to Query", cxxopts::value<int>()->default_value("16384"))(
+      "p,thread", "Num Thread", cxxopts::value<int>()->default_value("1"))(
+      "l,leaf", "Leaf node size", cxxopts::value<int>()->default_value("32"))(
+      "b,batch_size", "Batch Size", cxxopts::value<int>()->default_value("32"))(
+      "h,help", "Print usage");
+
+  options.parse_positional({"file", "query"});
+
+  const auto result = options.parse(argc, argv);
+
+  if (result.count("help")) {
+    std::cout << options.help() << std::endl;
+    exit(EXIT_SUCCESS);
   }
 
-  const char* data_file = argv[1];
-  const auto leaf_size = 96;
-  const auto batch_size = 32;
+  if (!result.count("file")) {
+    std::cerr << "requires an input file (\"data/input_nn_1m_4f.dat\")\n";
+    std::cout << options.help() << std::endl;
+    exit(EXIT_FAILURE);
+  }
 
+  const auto data_file = result["file"].as<std::string>();
+  const auto max_leaf_size = result["leaf"].as<int>();
+  const auto batch_size = result["batch_size"].as<int>();
+  const auto m = result["query"].as<int>();
+  const auto num_threads = result["thread"].as<int>();
+
+  // Load file
   const auto [in, n] = mmap_file<Point4F>(data_file);
+
+  std::cout << "Application Parameters" << '\n';
+  std::cout << "\tFile: " << data_file << '\n';
+  std::cout << "\tN: " << n << '\n';
+  std::cout << "\tM: " << m << '\n';
+  std::cout << "\tBatch Size: " << batch_size << '\n';
+  std::cout << "\tLeaf Size: " << max_leaf_size << '\n';
+  std::cout << "\tNum Threads: " << num_threads << '\n';
+  std::cout << std::endl;
+
+  exit(0);
 
   // Inspect input data is correct
   for (int i = 0; i < 10; ++i) {
@@ -239,7 +273,7 @@ int main(int argc, char** argv) {
   }
 
   std::cout << "Building Tree..." << std::endl;
-  const kdt::KdtParams params{leaf_size};
+  const kdt::KdtParams params{max_leaf_size};
   auto tree = std::make_shared<kdt::KdTree>(params, in, n);
   tree_ref = tree;
 
@@ -248,7 +282,7 @@ int main(int argc, char** argv) {
 
   // Now octree tree is comstructed, need to move leaf node data into USM
   const auto num_leaf_nodes = tree->GetStats().num_leaf_nodes;
-  rdc::AllocateLeafNodeTable(num_leaf_nodes, leaf_size, false);
+  rdc::AllocateLeafNodeTable(num_leaf_nodes, max_leaf_size, false);
   tree->LoadPayload(rdc::LntDataAddr());
 
   // TODO: figure out a better way, not important right now
@@ -260,7 +294,7 @@ int main(int argc, char** argv) {
     return Point4F{MyRand(0.0f, 1000.0f), MyRand(0.0f, 1000.0f),
                    MyRand(0.0f, 1000.0f), 1.0f};
   };
-  const auto m = 1024;
+
   std::queue<Point4F> q_data;
   for (int i = 0; i < m; ++i) q_data.push(rand_point4f());
 
@@ -278,71 +312,72 @@ int main(int argc, char** argv) {
   constexpr int tid = 0;
 
   std::vector<float> final_results;
-  final_results.reserve(m + 1);  // need to discard the first
+  final_results.reserve(m);
 
-  if constexpr (constexpr auto cpu = false; cpu) {
-    // Just CPU traversal
+  TimeTask("Traversal", [&] {
+    if constexpr (constexpr auto cpu = false; cpu) {
+      // Just CPU traversal
 
-    CpuExecutor exe{tid};
+      CpuExecutor exe{tid};
 
-    const auto q = q_data.front();
-    q_data.pop();
+      const auto q = q_data.front();
+      q_data.pop();
 
-    exe.StartQuery(q);
+      exe.StartQuery(q);
 
-    exe.k_set_.DebugPrint();
+      exe.k_set_.DebugPrint();
 
-  } else {
-    // Use redwood runtime
-    std::vector<Executor> exe[rdc::kNumStreams];
-    for (int stream_id = 0; stream_id < rdc::kNumStreams; ++stream_id) {
-      exe[stream_id].reserve(batch_size);
-      for (int i = 0; i < batch_size; ++i) {
-        exe[stream_id].emplace_back(tid, stream_id, i);
-      }
-    }
-
-    int cur_stream = 0;
-    while (!q_data.empty()) {
-      // Execute a group of 1024 executors at once, 1 step per executor
-      // for (auto it = exe[cur_stream].begin(); it != exe[cur_stream].end();
-      // ++it) {
-      for (auto& exe : exe[cur_stream]) {
-        if (exe.Finished()) {
-          // Results are printed here
-          std::cout << exe.k_set_->WorstDist() << std::endl;
-
-          // Make there is task in the queue
-          if (q_data.empty()) {
-            break;
-          }
-
-          const auto q = q_data.front();
-          q_data.pop();
-
-          exe.StartQuery(q);
-        } else {
-          exe.Resume();
+    } else {
+      // Use redwood runtime
+      std::vector<Executor> exe[rdc::kNumStreams];
+      for (int stream_id = 0; stream_id < rdc::kNumStreams; ++stream_id) {
+        exe[stream_id].reserve(batch_size);
+        for (int i = 0; i < batch_size; ++i) {
+          exe[stream_id].emplace_back(tid, stream_id, i);
         }
       }
 
-      rdc::LuanchKernelAsync(tid, cur_stream);
+      int cur_stream = 0;
+      while (!q_data.empty()) {
+        for (auto& exe : exe[cur_stream]) {
+          if (exe.Finished()) {
+            // Results are printed here
+            // std::cout << exe.k_set_->WorstDist() << std::endl;
 
-      const auto next = rdc::NextStream(cur_stream);
-      redwood::DeviceStreamSynchronize(next);
+            final_results.push_back(exe.k_set_->WorstDist());
 
-      // We could get results now
-      // const auto result = rdc::GetResultValueUnchecked<float>(tid, next);
-      // exe
+            // Make there is task in the queue
+            if (q_data.empty()) {
+              break;
+            }
 
-      // Todo: this q_idx is not true, should be the last one
-      // final_results.push_back(result);
+            const auto q = q_data.front();
+            q_data.pop();
 
-      // Switch buffer ( A->B, B-A)
-      cur_stream = next;
-      rdc::ClearBuffer(tid, cur_stream);
+            exe.StartQuery(q);
+          } else {
+            exe.Resume();
+          }
+        }
+
+        rdc::LuanchKernelAsync(tid, cur_stream);
+
+        const auto next = rdc::NextStream(cur_stream);
+        redwood::DeviceStreamSynchronize(next);
+
+        // We could get results now
+        // const auto result = rdc::GetResultValueUnchecked<float>(tid, next);
+        // exe
+
+        // Todo: this q_idx is not true, should be the last one
+        // final_results.push_back(result);
+
+        // Switch buffer ( A->B, B-A)
+        cur_stream = next;
+        rdc::ClearBuffer(tid, cur_stream);
+      }
     }
-  }
+  });
 
   // TODO: Handle Remaining
 
@@ -350,10 +385,10 @@ int main(int argc, char** argv) {
   // const auto next = rdc::NextStream(cur_stream);
   // redwood::DeviceStreamSynchronize(next);
 
-  // for (int i = 0; i < m; ++i) {
-  //   const auto q = final_results[i + 1];
-  //   std::cout << i << ": " << q << std::endl;
-  // }
+  for (int i = 0; i < 32; ++i) {
+    const auto q = final_results[i];
+    std::cout << i << ": " << q << std::endl;
+  }
 
   rdc::ReleaseReducers();
   return EXIT_SUCCESS;
