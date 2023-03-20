@@ -19,18 +19,7 @@ namespace cg = cooperative_groups;
 
 constexpr auto kNumBlocks = 1;
 
-// template <typename T>
-// void check(T result, char const* const func, const char* const file,
-//            int const line) {
-//   if (result) {
-//     fprintf(stderr, "CUDA error at %s:%d code=%d(%s) \"%s\" \n", file, line,
-//             static_cast<unsigned int>(result), _cudaGetErrorEnum(result),
-//             func);
-//     exit(EXIT_FAILURE);
-//   }
-// }
-
-// #define checkCudaErrors(val) check((val), #val, __FILE__, __LINE__)
+namespace Distance {
 
 struct EuclideanFunctor {
   __host__ __device__ __forceinline__ float operator()(const float2& p,
@@ -65,13 +54,15 @@ struct HaversineFunctor {
     return rad * c;
   }
 };
+}  // namespace Distance
 
-template <typename DataT, typename ResultT, typename ReductionOp>
+template <typename DataT, typename ResultT, int block_threads,
+          typename ReductionOp>
 __device__ void FunctionKernel(cg::thread_group g, DataT* u_buffer,
                                ResultT* u_result, const DataT q) {
   // This need to be a conexpr, because I am passing this as a template argument
   // for Cub library. Although is is just the same as 'g.size()'
-  constexpr int block_threads = 1024;
+  // constexpr int block_threads = 1024;
   constexpr int items_to_reduce = 1024;
   constexpr int items_per_thread = items_to_reduce / block_threads;
 
@@ -105,23 +96,22 @@ __device__ void FunctionKernel(cg::thread_group g, DataT* u_buffer,
   if (tid == 0) u_result[0] = min(u_result[0], aggregate);
 }
 
-__device__ __forceinline__ void WaitCPU(int* com) {
+__device__ __forceinline__ void WaitCPU(volatile int* com) {
   int block_id = blockIdx.x;
   while (com[block_id] != 1 && com[kNumBlocks] != 1) {
-    // __threadfence_system(); ?
-    __threadfence();
+    __threadfence_system();
   }
 }
 
-__device__ __forceinline__ void WorkComplete(int* com) {
+__device__ __forceinline__ void WorkComplete(volatile int* com) {
   int block_id = blockIdx.x;
   com[block_id] = 0;
 }
 
-template <typename DataT, typename ResultT,
-          typename ReductionOp = EuclideanFunctor>
+template <typename DataT, typename ResultT, int block_threads = 1024,
+          typename ReductionOp = Distance::EuclideanFunctor>
 __global__ void PersistentKernel(DataT* u_buffer, const DataT q,
-                                 ResultT* u_result, int* com) {
+                                 ResultT* u_result, volatile int* com) {
   auto cta = cg::this_thread_block();
   const auto tid = cta.thread_rank();
 
@@ -132,55 +122,26 @@ __global__ void PersistentKernel(DataT* u_buffer, const DataT q,
     // cancelling point
     if (com[kNumBlocks] == 1) return;
 
-    FunctionKernel<DataT, ResultT, ReductionOp>(cta, u_buffer, u_result, q);
+    FunctionKernel<DataT, ResultT, block_threads, ReductionOp>(cta, u_buffer,
+                                                               u_result, q);
 
     if (tid == 0) WorkComplete(com);
   }
 }
 
-// template <typename DataT, typename ResultT>
-// __global__ void PersistentKernelDoubleBuffer(DataT* u_buffer_a,    //
-//                                              DataT* u_buffer_b,    //
-//                                              const int n,          //
-//                                              const DataT q,        //
-//                                              ResultT* u_result_a,  //
-//                                              ResultT* u_result_b,  //
-//                                              int* com) {
-//   auto cta = cg::this_thread_block();
-//   const auto tid = cta.thread_rank();
-
-//   // Temporary.
-//   // com[0] = buffer a status
-//   //    0 : buffer a
-//   //    1 : buffer b
-//   // com[2] = program status
-
-//   while (com[2] != 1) {
-//     if (tid == 0) WaitCPU(com);
-//     __syncthreads();
-
-//     // cancelling point
-//     if (com[2] == 1) return;
-
-//     FunctionKernel(cta, u_buffer, n, u_result, q);
-
-//     if (tid == 0) WorkComplete(com);
-//   }
-// }
-
-template <typename DataT, typename ResultT,
-          typename ReductionOp = EuclideanFunctor>
+template <typename DataT, typename ResultT, int block_threads = 1024,
+          typename ReductionOp = Distance::EuclideanFunctor>
 __global__ void NormalKernel(DataT* d_data, const int n, const DataT q,
                              ResultT* u_result) {
   auto cta = cg::this_thread_block();
   const auto tid = cta.thread_rank();
-  const int block_threads = cta.size();
+  // const int block_threads = cta.size();
 
   const auto iterations = n / block_threads;
   for (int i = 0; i < iterations; ++i) {
-    if (tid == 0) printf("gpu iteration (%d/%d)\n", i, iterations);
-    FunctionKernel<DataT, ResultT, ReductionOp>(cta, d_data + i * block_threads,
-                                                u_result, q);
+    // if (tid == 0) printf("gpu iteration (%d/%d)\n", i, iterations);
+    FunctionKernel<DataT, ResultT, block_threads, ReductionOp>(
+        cta, d_data + i * block_threads, u_result, q);
   }
 }
 
@@ -225,6 +186,23 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
+  int nDevices;
+  cudaGetDeviceCount(&nDevices);
+  for (int i = 0; i < nDevices; i++) {
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, i);
+    printf("Device Number: %d\n", i);
+    printf("  Device name: %s\n", prop.name);
+    printf("  Memory Clock Rate (KHz): %d\n",
+    prop.memoryClockRate);
+printf("  Memory Bus Width (bits): %d\n",
+    prop.memoryBusWidth);
+printf("  Peak Memory Bandwidth (GB/s): %f\n\n",
+    2.0*prop.memoryClockRate*(prop.memoryBusWidth/8)/1.0e6);
+    printf("  concurrentManagedAccess: %d\n", prop.concurrentManagedAccess );
+
+  }
+
   const int enable_pk = atoi(argv[1]);
 
   constexpr int n = 1024 * 1024;
@@ -235,8 +213,22 @@ int main(int argc, char** argv) {
   float* u_result = nullptr;
   int* u_com = nullptr;
 
-  cudaAllocMapped(&u_buffer, sizeof(float2) * buffer_size);
-  cudaAllocMapped(&u_result, sizeof(float) * 1);
+  cudaStream_t stream1;
+  cudaStreamCreate(&stream1);
+  
+  cudaMallocManaged(&u_buffer, sizeof(float2) * buffer_size);
+  cudaMallocManaged(&u_result, sizeof(float) * 1);
+  // cudaMallocManaged(&u_com, sizeof(int) * (kNumBlocks + 1));
+
+  // cudaMemAdvise(&u_result, dataSize, cudaMemAdviseSetReadMostly, 0);
+
+  cudaStreamAttachMemAsync(stream1, &u_buffer, 0, cudaMemAttachGlobal );
+  cudaStreamAttachMemAsync(stream1, &u_result, 0, cudaMemAttachGlobal );
+  // cudaStreamAttachMemAsync(stream1, &u_com, 0, cudaMemAttachGlobal );
+  cudaDeviceSynchronize(); 
+  
+  // cudaAllocMapped(&u_buffer, sizeof(float2) * buffer_size);
+  // cudaAllocMapped(&u_result, sizeof(float) * 1);
   cudaAllocMapped(&u_com, sizeof(int) * (kNumBlocks + 1));
 
   u_result[0] = std::numeric_limits<float>::max();
@@ -247,7 +239,7 @@ int main(int argc, char** argv) {
   TimeTask("CPU Compute: ", [&] {
     auto sum = std::numeric_limits<float>::max();
 
-    constexpr auto functor = HaversineFunctor();
+    constexpr auto functor = Distance::EuclideanFunctor();
     for (int i = 0; i < n; ++i) {
       const auto dist = functor(h_p_data[i], q);
       sum = std::min(sum, dist);
@@ -262,7 +254,7 @@ int main(int argc, char** argv) {
 
   if (enable_pk) {
     // Launching the PK only once
-    PersistentKernel<<<kNumBlocks, num_threads>>>(u_buffer, q, u_result, u_com);
+    PersistentKernel<<<kNumBlocks, num_threads, 0, stream1>>>(u_buffer, q, u_result, u_com);
 
     TimeTask("PK GPU: ", [&] {
       const auto iterations = n / num_threads;
@@ -296,7 +288,7 @@ int main(int argc, char** argv) {
     });
 
     TimeTask("Normal GPU (1 block) compute: ", [&] {
-      NormalKernel<float2, float, HaversineFunctor>
+      NormalKernel<float2, float>
           <<<kNumBlocks, num_threads>>>(d_data, n, q, u_result);
       HANDLE_ERROR(cudaGetLastError());
 
