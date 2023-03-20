@@ -309,6 +309,7 @@ int main(int argc, char** argv) {
       // ++it) {
       for (auto& exe : exe[cur_stream]) {
         if (exe.Finished()) {
+          // Results are printed here
           std::cout << exe.k_set_->WorstDist() << std::endl;
 
           // Make there is task in the queue

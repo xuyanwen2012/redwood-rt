@@ -1,8 +1,6 @@
 #pragma once
 
-#include "Redwood/Point.hpp"
-#include "Redwood/Usm.hpp"
-#include "Utils.hpp"
+#include "Redwood.hpp"
 
 namespace rdc {
 

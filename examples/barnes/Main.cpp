@@ -6,11 +6,16 @@
 
 #include "../LoadFile.hpp"
 #include "../Utils.hpp"
+#include "DuetReducer.hpp"
 #include "Kernel.hpp"
 #include "Octree.hpp"
-#include "ReducerHandler.hpp"
-#include "Redwood/Core.hpp"
-#include "Redwood/Point.hpp"
+#include "Reducer.hpp"
+#include "Redwood.hpp"
+
+// Redwood user need to specify which reducer to use (barnes/knn) and its types
+
+using MyReducer = rdc::DoubleBufferReducer<Point4F, float>;
+// using MyReducer = rdc::DuetBarnesReducer<Point4F, float>;
 
 struct ExecutorStats {
   int leaf_node_reduced = 0;
@@ -19,58 +24,47 @@ struct ExecutorStats {
 
 // BH Algorithm
 class Executor {
+  // Store some reference used
+  const int my_tid_;
+  const int my_stream_id_;
+  static float theta_;  // = 0.2f;
+  ExecutorStats stats_;
+
+  Point4F my_q_;
+
+  // Used on the CPU side
+  float cached_result_;
+
  public:
   Executor(const int tid, const int stream_id)
       : my_tid_(tid), my_stream_id_(stream_id) {}
 
   static void SetThetaValue(const float theta) { theta_ = theta; }
 
-  void NewTask(const Point4F q) {
+  void StartQuery(const Point4F& q, const oct::Node<float>* root) {
+    // Clear executor's data
     stats_.leaf_node_reduced = 0;
     stats_.branch_node_reduced = 0;
     cached_result_ = 0.0f;
+
+    // This is a host copy of q point, so some times the traversal doesn't have
+    // to bother with accessing USM
     my_q_ = q;
-    rdc::SetQuery(my_tid_, my_stream_id_, q);
-  }
 
-  void TraverseRecursiveCpu(const oct::Node<float>* cur) {
-    if (cur->IsLeaf()) {
-      if (cur->bodies.empty()) return;
-      cached_result_ += ReduceLeafsCpu(my_q_, cur->uid);
-      ++stats_.leaf_node_reduced;
-    } else {
-      if (const auto my_theta = ComputeThetaValue(cur, my_q_);
-          my_theta < theta_) {
-        ++stats_.branch_node_reduced;
-        // cached_result_ += KernelFunc(cur->CenterOfMass(), my_q_);
-      } else
-        for (const auto child : cur->children)
-          if (child != nullptr) TraverseRecursiveCpu(child);
-    }
-  }
+    // Notify Reducer to
+    // In case of FPGA, it will register the anchor point (q) into the registers
+    MyReducer::SetQuery(my_tid_, my_stream_id_, &my_q_);
 
-  // Main Barnes-Hut Traversal Algorithm, annotated with Redwood APIs
-  void TraverseRecursive(const oct::Node<float>* cur) {
-    if (cur->IsLeaf()) {
-      if (cur->bodies.empty()) return;
-      rdc::ReduceLeafNode(my_tid_, my_stream_id_, cur->uid);
-      ++stats_.leaf_node_reduced;
-    } else if (const auto my_theta = ComputeThetaValue(cur, my_q_);
-               my_theta < theta_) {
-      ++stats_.branch_node_reduced;
-      rdc::ReduceBranchNode(my_tid_, my_stream_id_, cur->CenterOfMass());
-    } else
-      for (const auto child : cur->children)
-        if (child != nullptr) TraverseRecursive(child);
+    TraverseRecursive(root);
   }
 
   ExecutorStats GetStats() const { return stats_; }
 
-  float GetResult() const { return cached_result_; }
+  float GetHostResult() const { return cached_result_; }
 
- protected:
+ private:
   static float ComputeThetaValue(const oct::Node<float>* node,
-                                 const Point4F pos) {
+                                 const Point4F& pos) {
     const auto com = node->CenterOfMass();
     auto norm_sqr = 1e-9f;
 
@@ -84,30 +78,31 @@ class Executor {
     return node->bounding_box.dimension.data[0] / norm;
   }
 
-  static float ReduceLeafsCpu(const Point4F& q, int leaf_idx) {
-    constexpr auto leaf_size = 64;
-    const auto addr = rdc::LntDataAddr() + leaf_idx * leaf_size;
+  // Main Barnes-Hut Traversal Algorithm, annotated with Redwood APIs
+  void TraverseRecursive(const oct::Node<float>* cur) {
+    if (cur->IsLeaf()) {
+      if (cur->bodies.empty()) return;
 
-    float sum{};
-    for (int i = 0; i < leaf_size; ++i) {
-      sum += KernelFunc(addr[i], q);
-    }
+      // ------------------------------------------------------------
+      MyReducer::ReduceLeafNode(my_tid_, my_stream_id_, cur->uid);
+      // ------------------------------------------------------------
 
-    return sum;
+      ++stats_.leaf_node_reduced;
+    } else if (const auto my_theta = ComputeThetaValue(cur, my_q_);
+               my_theta < theta_) {
+      ++stats_.branch_node_reduced;
+
+      // ------ TODO: lets' not reduce this on accelerator ----------
+      constexpr auto my_functor = MyFunctor();
+      const auto dist = my_functor(cur->CenterOfMass(), my_q_);
+      // MyReducer::ReduceBranchNode(my_tid_, my_stream_id_,
+      // cur->CenterOfMass());
+      // ------------------------------------------------------------
+
+    } else
+      for (const auto child : cur->children)
+        if (child != nullptr) TraverseRecursive(child);
   }
-
- private:
-  // Store some reference used
-  const int my_tid_;
-  const int my_stream_id_;
-  static float theta_;  // = 0.2f;
-  ExecutorStats stats_;
-
-  Point4F my_q_;
-
- public:
-  // Used on the CPU side
-  float cached_result_;
 };
 
 float Executor::theta_ = 0.2f;
@@ -143,8 +138,12 @@ int main(int argc, char** argv) {
 
   std::cout << "Loading USM leaf node data..." << std::endl;
 
-  // Initialize Backend, Reducer(double buffer), and Executor(tree algorithm)
-  rdc::InitReducers();
+  // Initialize Backend (find device etc., warmup), Reducer(double buffer), and
+  // Executor(tree algorithm)
+  redwood::Init();
+
+  MyReducer::InitReducers();
+
   Executor::SetThetaValue(theta);
 
   // Now octree tree is comstructed, need to move leaf node data into USM
@@ -161,84 +160,94 @@ int main(int argc, char** argv) {
     return Point4F{MyRand(0.0f, 1000.0f), MyRand(0.0f, 1000.0f),
                    MyRand(0.0f, 1000.0f), 1.0f};
   };
+
   const auto m = 32;
   std::queue<Point4F> q_data;
   for (int i = 0; i < m; ++i) q_data.push(rand_point4f());
 
   std::vector<float> final_results;
-  final_results.reserve(m + 1);  // need to discard the first
-
-  // TimeTask("Cpu Traversal", [&] {
-  //   Executor cpu_exe(0, 0);
-  //   while (!q_data.empty()) {
-  //     const auto q = q_data.front();
-
-  //     cpu_exe.NewTask(q);
-  //     cpu_exe.TraverseRecursiveCpu(tree.GetRoot());
-  //     final_results.push_back(cpu_exe.cached_result_);
-
-  //     q_data.pop();
-  //   }
-  // });
-
-  // for (int i = 0; i < m; ++i) {
-  //   const auto q = final_results[i];
-  //   std::cout << i << ": " << q << std::endl;
-  // }
+  final_results.reserve(m);  // need to discard the first
 
   // Assume in future version this tid will be generated?
   std::cout << "Start Traversal " << std::endl;
   constexpr int tid = 0;
-  int cur_stream = 0;
-  Executor exe[rdc::kNumStreams]{{tid, 0}, {tid, 1}};
 
   TimeTask("Traversal", [&] {
-    while (!q_data.empty()) {
-      const auto q = q_data.front();
+    if constexpr (true) {
+      // ------------------- CUDA ------------------------------------
 
-      // std::cout << "Processing task: " << q << std::endl;
+      int cur_stream = 0;
+      Executor exe[redwood::kNumStreams]{{tid, 0}, {tid, 1}};
 
-      // Set anchor
-      exe[cur_stream].NewTask(q);
+      bool init = false;
+      while (!q_data.empty()) {
+        const auto q = q_data.front();
 
-      // Traverse tree and collect data
-      exe[cur_stream].TraverseRecursive(tree.GetRoot());
+        exe[cur_stream].StartQuery(q, tree.GetRoot());
 
-      std::cout << "\tl: " << exe[cur_stream].GetStats().leaf_node_reduced
-                << "\tb: " << exe[cur_stream].GetStats().branch_node_reduced
-                << std::endl;
+        if constexpr (true) {
+          std::cout << "\tl: " << exe[cur_stream].GetStats().leaf_node_reduced
+                    << "\tb: " << exe[cur_stream].GetStats().branch_node_reduced
+                    << std::endl;
+        }
 
-      rdc::LuanchKernelAsync(tid, cur_stream);
+        MyReducer::LuanchKernelAsync(tid, cur_stream);
 
-      // Synchronize the next stream
-      const auto next = rdc::NextStream(cur_stream);
-      redwood::DeviceStreamSynchronize(next);
+        // Synchronize the next stream
+        const auto next = MyReducer::NextStream(cur_stream);
 
-      // Read results that were computed and synchronized before
-      const auto result = rdc::GetResultValueUnchecked<float>(tid, next);
+        // Read results that were compute
+        if (init) {
+          redwood::DeviceStreamSynchronize(next);
+          const auto result_addr = MyReducer::GetResultAddr(tid, next);
+          final_results.push_back(*result_addr);
+        } else {
+          init = true;
+        }
 
-      // Todo: this q_idx is not true, should be the last one
-      final_results.push_back(result);
+        // Switch buffer ( A->B, B-A)
+        cur_stream = next;
+        MyReducer::ClearBuffer(tid, cur_stream);
 
-      // Switch buffer ( A->B, B-A)
-      cur_stream = next;
-      rdc::ClearBuffer(tid, cur_stream);
-      q_data.pop();
+        q_data.pop();
+      }
+
+      // When q are finished, remember to Synchronize the last bit;
+      redwood::DeviceSynchronize();
+      const auto next = MyReducer::NextStream(cur_stream);
+
+      const auto result_addr = MyReducer::GetResultAddr(tid, next);
+      final_results.push_back(*result_addr);
+
+      // -------------------------------------------------------------
+    } else {
+      // ------------------- Duet ------------------------------------
+
+      Executor exe{tid, 0};
+
+      while (!q_data.empty()) {
+        const auto q = q_data.front();
+
+        exe.StartQuery(q, tree.GetRoot());
+
+        const auto result_addr = MyReducer::GetResultAddr(tid, 0);
+        final_results.push_back(0.0f);
+        q_data.pop();
+      }
+
+      // -------------------------------------------------------------
     }
-
-    // When q are finished, remember to Synchronize the last bit;
-    redwood::DeviceSynchronize();
-    const auto next = rdc::NextStream(cur_stream);
-
-    const auto result = rdc::GetResultValueUnchecked<float>(tid, next);
-    final_results.push_back(result);
   });
 
+  // -------------------------------------------------------------
+
   for (int i = 0; i < m; ++i) {
-    const auto q = final_results[i + 1];
+    const auto q = final_results[i];
     std::cout << i << ": " << q << std::endl;
   }
 
-  rdc::ReleaseReducers();
+  rdc::FreeLeafNodeTalbe();
+  MyReducer::ReleaseReducers();
+
   return EXIT_SUCCESS;
 }

@@ -1,47 +1,47 @@
 #pragma once
 
-#include "Point.hpp"
+#include <utility>
+
+#include "Constants.hpp"
 
 namespace rdc {
 
-// struct ReducerHandler {
-//   void Init(const int batch_size = 1024);
-//   void Release();
-// };
+// Algorithms should implement
+// Common API interface for Reducer
+//
+template <typename Derived, typename DataT, typename ResultT>
+struct ReducerBase {
+  static void InitReducers() { Derived::InitReducers(); }
+  static void ReleaseReducers() { Derived::ReleaseReducers(); }
 
-inline void InitReducers();
-inline void ReleaseReducers();
-inline void SetQuery(const int tid, const int stream_id, const Point4F q);
-inline void ReduceLeafNode(const int tid, const int stream_id,
-                           const int node_idx);
-inline void ReduceBranchNode(const int tid, const int stream_id,
-                             const Point4F data);
-inline void ClearBuffer(const int tid, const int stream_id);
+  template <typename... Args>
+  static void SetQuery(Args&&... args) {
+    Derived::SetQuery(std::forward<Args>(args)...);
+  }
 
-inline int NextStream(const int stream_id);
+  template <typename... Args>
+  static void ReduceLeafNode(Args&&... args) {
+    Derived::ReduceLeafNode(std::forward<Args>(args)...);
+  }
 
-// // Mostly for KNN
-// template <typename T>
-// _NODISCARD T* GetResultAddr(const int tid, const int stream_id) {
-//   return rhs[tid].UsmResultAddr(stream_id);
-// }
+  // template <typename... Args>
+  // static void ReduceBranchNode(Args&&... args) {
+  //   Derived::ReduceBranchNode(std::forward<Args>(args)...);
+  // }
 
-// // Mostly for BH/NN
-// template <typename T>
-// _NODISCARD T GetResultValueUnchecked(const int tid, const int stream_id) {
-//   return *GetResultAddr<T>(tid, stream_id);
-// }
+  template <typename... Args>
+  static void ClearBuffer(Args&&... args) {
+    Derived::ClearBuffer(std::forward<Args>(args)...);
+  }
 
-// inline void LuanchKernelAsync(const int tid, const int stream_id) {
-//   // TODO: Need to select User's kernel
-//   redwood::ComputeOneBatchAsync(
-//       rhs[tid].UsmBuffer(stream_id).Data(), /* Buffered data to process */
-//       static_cast<int>(rhs[tid].UsmBuffer(stream_id).Size()), /* / */
-//       rhs[tid].UsmResultAddr(stream_id),                      /* Return Addr
-//       */ rdc::LntDataAddr(),                                     /* Shared
-//       data */ nullptr,                        /* Ignore for now */
-//       rhs[tid].QueryPoint(stream_id), /* Single data */
-//       stream_id);
-// }
+  static int NextStream(const int stream_id) {
+    return (redwood::kNumStreams - 1) - stream_id;
+  }
+
+  template <typename... Args>
+  static ResultT* GetResultAddr(Args&&... args) {
+    return Derived::GetResultAddr(std::forward<Args>(args)...);
+  }
+};
 
 }  // namespace rdc
