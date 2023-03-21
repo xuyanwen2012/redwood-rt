@@ -283,7 +283,7 @@ int main(int argc, char** argv) {
   final_results.reserve(app_params.m);
 
   if (app_params.cpu) {
-    TimeTask("Cpu Traversal", [&] {
+    TimeTask("Traversal", [&] {
       Executor exe{tid, 0, 0};
       while (!q_data.empty()) {
         const auto q = q_data.front();
@@ -296,7 +296,7 @@ int main(int argc, char** argv) {
     });
 
   } else {
-    TimeTask("PAPU Traversal", [&] {
+    TimeTask("Traversal", [&] {
       // Use redwood runtime
       std::vector<Executor> exes[rdc::kNumStreams];
       for (int stream_id = 0; stream_id < rdc::kNumStreams; ++stream_id) {
