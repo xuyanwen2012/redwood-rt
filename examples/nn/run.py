@@ -9,11 +9,13 @@ parser.add_argument('-c', '--cpu', action='store_true',
                     help='enable cpu')
 args = parser.parse_args()
 
+binary = './cuda.out'
+datafile = '../../data/input_nn_1m_4f.dat 1048576'
 l_values = [32, 64, 128, 256, 512, 1024]
 
 for l in l_values:
     with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp_file:
-        command = f"./cuda.out ../../data/input_nn_1m_4f.dat 1048576 -l {l}"
+        command = f'{binary} {datafile} -l {l}'
         if args.cpu:
             command += " -c"
 
@@ -23,11 +25,11 @@ for l in l_values:
         output_lines = temp_file.readlines()
 
         time_regex = re.compile(
-            r"Finished Traversal! Time took: (\d+\.\d+)s.")
+            r'Finished Traversal! Time took: (\d+\.\d+)s.')
         for line in output_lines:
             match = time_regex.search(line)
             if match:
                 time_taken = float(match.group(1))
-                print(f"Time took for -l {l}: {time_taken}s")
+                print(f'Time took for -l {l}: {time_taken}s')
 
         os.remove(temp_file.name)
