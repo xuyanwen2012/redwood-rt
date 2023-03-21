@@ -85,6 +85,7 @@ void ComputeOneBatchAsync(const int* u_leaf_indices,  /**/
     *out += acc;
   }
 }
+
 void ComputeOneBatchAsync_PB(const int* u_leaf_indices,  /**/
                              const int num_active_leafs, /**/
                              float* out,                 /**/

@@ -46,6 +46,9 @@ class Executor {
     // When created,
     float* base_addr = rdc::GetResultAddr<float>(my_tid_, my_stream_id_);
     u_my_result_addr_ = base_addr + my_id;
+
+    // std::cout << "\tCreated " << my_id << ": at addr " << u_my_result_addr_
+    // << std::endl;
   }
 
   _NODISCARD bool Finished() const {
@@ -97,12 +100,6 @@ class Executor {
             KernelFunc(tree_ref->in_data_ref_[accessor_idx], my_query_point_);
 
         k_set_->Insert(dist);
-
-        // std::cout << '\t' << u_my_result_addr_ << ": " << *u_my_result_addr_
-        //           << std::endl;
-
-        // std::cout << '\t' << u_my_result_addr_ << ": " << k_set_->WorstDist()
-        // << std::endl;
 
         // **********************************
 
@@ -315,49 +312,21 @@ int main(int argc, char** argv) {
   } else {
     TimeTask("PAPU Traversal", [&] {
       // Use redwood runtime
-      std::vector<Executor> exes[rdc::kNumStreams];
+      std::vector<Executor> exe[rdc::kNumStreams];
       for (int stream_id = 0; stream_id < rdc::kNumStreams; ++stream_id) {
-        exes[stream_id].reserve(app_params.batch_size);
+        exe[stream_id].reserve(app_params.batch_size);
         for (int i = 0; i < app_params.batch_size; ++i) {
-          exes[stream_id].emplace_back(tid, stream_id, i);
+          exe[stream_id].emplace_back(tid, stream_id, i);
         }
       }
 
-      if constexpr (false) {
-        for (int stream_id = 0; stream_id < rdc::kNumStreams; ++stream_id)
-          for (auto& exe : exes[stream_id])
-            std::cout << exe.my_tid_ << "-" << exe.my_stream_id_ << "-"
-                      << exe.debug_uid_ << "\t" << exe.u_my_result_addr_
-                      << std::endl;
-      }
-
       // During the initial iteration, we can assume they are all finished
-      // Batch A, first pass
-      for (auto& exe : exes[0]) {
-        if (q_data.empty()) break;
-        const auto q = q_data.front();
-        q_data.pop();
-        exe.StartQuery(q);
-      }
-      rdc::LuanchKernelAsync(tid, 0);
-
-      // Batch B, first pass
-      for (auto& exe : exes[1]) {
-        if (q_data.empty()) break;
-        const auto q = q_data.front();
-        q_data.pop();
-        exe.StartQuery(q);
-      }
-      rdc::LuanchKernelAsync(tid, 1);
-
-      redwood::DeviceStreamSynchronize(0);
-      rdc::ClearBuffer(tid, 0);
-
-      auto cur_stream = 0;
-      // Batch A or B, alternating
+      int cur_stream = 0;
       while (!q_data.empty()) {
-        for (auto& exe : exes[cur_stream]) {
+        for (auto& exe : exe[cur_stream]) {
           if (exe.Finished()) {
+            // Results are printed here
+            // std::cout << exe.k_set_->WorstDist() << std::endl;
             final_results.push_back(exe.k_set_->WorstDist());
 
             // Make there is task in the queue
@@ -367,6 +336,7 @@ int main(int argc, char** argv) {
 
             const auto q = q_data.front();
             q_data.pop();
+
             exe.StartQuery(q);
           } else {
             exe.Resume();
@@ -375,33 +345,19 @@ int main(int argc, char** argv) {
 
         rdc::LuanchKernelAsync(tid, cur_stream);
 
-        // Switch buffer ( A->B, B-A)
         const auto next = rdc::NextStream(cur_stream);
         redwood::DeviceStreamSynchronize(next);
+
+        // Switch buffer ( A->B, B-A)
         cur_stream = next;
         rdc::ClearBuffer(tid, cur_stream);
-
-        // for (auto& exe : exes[cur_stream])
-        //   std::cout << exe.my_tid_ << "-" << exe.my_stream_id_ << "-"
-        //             << exe.debug_uid_ << "\t" << exe.u_my_result_addr_ << " =
-        //             "
-        //             << exe.k_set_->WorstDist() << std::endl;
-        // for (auto& exe : exes[next])
-        //   std::cout << exe.my_tid_ << "-" << exe.my_stream_id_ << "-"
-        //             << exe.debug_uid_ << "\t" << exe.u_my_result_addr_ << " =
-        //             "
-        //             << exe.k_set_->WorstDist() << std::endl;
-        // exit(0);
       }
-
-      // Tasks are empty, but executors still not down yet.
     });
   }
 
-  std::sort(final_results.begin(), final_results.end());
   for (int i = 0; i < 32; ++i) {
     const auto q = final_results[i];
-    std::cout << "final " << i << ": " << q << std::endl;
+    std::cout << i << ": " << q << std::endl;
   }
 
   rdc::ReleaseReducers();
