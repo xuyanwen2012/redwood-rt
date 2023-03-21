@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdlib>
+#include <iterator>
 #include <memory>
 #include <numeric>
 #include <queue>
@@ -30,7 +31,7 @@ struct CallStackField {
 // Knn Algorithm
 class Executor {
  public:
-  Executor() = delete;
+  // Executor() = delete;
 
   // Thread id, i.e., [0, .., n_threads]
   // Stream id in the thread, i.e., [0, 1]
@@ -52,8 +53,9 @@ class Executor {
     return state_ == ExecutionState::kFinished;
   }
 
-  void StartQuery(const Point4F q) {
-    my_query_point_ = q;
+  void SetQuery(const Point4F& q) { my_query_point_ = q; }
+
+  void StartQuery() {
     stack_.clear();
     k_set_->Clear();
     cur_ = nullptr;
@@ -61,6 +63,11 @@ class Executor {
   }
 
   void Resume() { Execute(); }
+
+  void CPUTraverse() {
+    k_set_->Clear();
+    TraversalRecursive(tree_ref->root_);
+  }
 
  protected:
   void Execute() {
@@ -98,12 +105,6 @@ class Executor {
 
         k_set_->Insert(dist);
 
-        // std::cout << '\t' << u_my_result_addr_ << ": " << *u_my_result_addr_
-        //           << std::endl;
-
-        // std::cout << '\t' << u_my_result_addr_ << ": " << k_set_->WorstDist()
-        // << std::endl;
-
         // **********************************
 
         const int axis = cur_->node_type.tree.axis;
@@ -138,11 +139,44 @@ class Executor {
       }
     }
 
-    // Done traversals, Write back to final results
+    // Done traversals
     state_ = ExecutionState::kFinished;
+  }
 
-    // k_set_->DebugPrint();
-    // exit(0);
+  void TraversalRecursive(const kdt::Node* cur) {
+    if (cur->IsLeaf()) {
+      const auto leaf_addr = rdc::LntDataAddrAt(cur->uid);
+      for (int i = 0; i < tree_ref->GetParams().leaf_max_size; ++i) {
+        const float dist = KernelFunc(leaf_addr[i], my_query_point_);
+        k_set_->Insert(dist);
+      }
+
+    } else {
+      // **** Reduction at tree node ****
+      const unsigned accessor_idx =
+          tree_ref->v_acc_[cur->node_type.tree.idx_mid];
+      const float dist =
+          KernelFunc(tree_ref->in_data_ref_[accessor_idx], my_query_point_);
+      k_set_->Insert(dist);
+
+      // **********************************
+
+      const auto axis = cur->node_type.tree.axis;
+      const auto train = tree_ref->in_data_ref_[accessor_idx].data[axis];
+      const auto dir = my_query_point_.data[axis] < train ? kdt::Dir::kLeft
+                                                          : kdt::Dir::kRight;
+
+      TraversalRecursive(cur->GetChild(dir));
+
+      Point4F a{};
+      Point4F b{};
+      a.data[axis] = my_query_point_.data[axis];
+      b.data[axis] = train;
+      const auto diff = KernelFunc(a, b);
+      if (diff < k_set_->WorstDist()) {
+        TraversalRecursive(cur->GetChild(FlipDir(dir)));
+      }
+    }
   }
 
  private:
@@ -164,64 +198,11 @@ class Executor {
   ExecutionState state_;
 
   // Store some reference used
-  const int my_tid_;
-  const int my_stream_id_;
+  int my_tid_;
+  int my_stream_id_;
 
  public:
-  const int debug_uid_;
-};
-
-class CpuExecutor {
- public:
-  CpuExecutor(const int tid) : my_tid_(tid) {}
-
-  void StartQuery(const Point4F q) {
-    my_query_point_ = q;
-    k_set_.Clear();
-    TraversalRecursive(tree_ref->GetRoot());
-  }
-
-  KnnSet<float, 1> k_set_;
-
- private:
-  void TraversalRecursive(const kdt::Node* cur) {
-    if (cur->IsLeaf()) {
-      const auto leaf_addr = rdc::LntDataAddrAt(cur->uid);
-      for (int i = 0; i < tree_ref->GetParams().leaf_max_size; ++i) {
-        const float dist = KernelFunc(leaf_addr[i], my_query_point_);
-        k_set_.Insert(dist);
-      }
-
-    } else {
-      // **** Reduction at tree node ****
-      const unsigned accessor_idx =
-          tree_ref->v_acc_[cur->node_type.tree.idx_mid];
-      const float dist =
-          KernelFunc(tree_ref->in_data_ref_[accessor_idx], my_query_point_);
-      k_set_.Insert(dist);
-
-      // **********************************
-
-      const auto axis = cur->node_type.tree.axis;
-      const auto train = tree_ref->in_data_ref_[accessor_idx].data[axis];
-      const auto dir = my_query_point_.data[axis] < train ? kdt::Dir::kLeft
-                                                          : kdt::Dir::kRight;
-
-      TraversalRecursive(cur->GetChild(dir));
-
-      Point4F a{};
-      Point4F b{};
-      a.data[axis] = my_query_point_.data[axis];
-      b.data[axis] = train;
-      const auto diff = KernelFunc(a, b);
-      if (diff < k_set_.WorstDist()) {
-        TraversalRecursive(cur->GetChild(FlipDir(dir)));
-      }
-    }
-  }
-
-  Point4F my_query_point_;
-  const int my_tid_;
+  int debug_uid_;
 };
 
 int main(int argc, char** argv) {
@@ -303,12 +284,14 @@ int main(int argc, char** argv) {
 
   if (app_params.cpu) {
     TimeTask("Cpu Traversal", [&] {
-      CpuExecutor exe{tid};
+      Executor exe{tid, 0, 0};
       while (!q_data.empty()) {
         const auto q = q_data.front();
         q_data.pop();
-        exe.StartQuery(q);
-        final_results.push_back(exe.k_set_.WorstDist());
+
+        exe.SetQuery(q);
+        exe.CPUTraverse();
+        final_results.push_back(exe.k_set_->WorstDist());
       }
     });
 
@@ -337,7 +320,8 @@ int main(int argc, char** argv) {
         if (q_data.empty()) break;
         const auto q = q_data.front();
         q_data.pop();
-        exe.StartQuery(q);
+        exe.SetQuery(q);
+        exe.StartQuery();
       }
       rdc::LuanchKernelAsync(tid, 0);
 
@@ -346,15 +330,16 @@ int main(int argc, char** argv) {
         if (q_data.empty()) break;
         const auto q = q_data.front();
         q_data.pop();
-        exe.StartQuery(q);
+        exe.SetQuery(q);
+        exe.StartQuery();
       }
       rdc::LuanchKernelAsync(tid, 1);
 
       redwood::DeviceStreamSynchronize(0);
       rdc::ClearBuffer(tid, 0);
 
-      auto cur_stream = 0;
       // Batch A or B, alternating
+      auto cur_stream = 0;
       while (!q_data.empty()) {
         for (auto& exe : exes[cur_stream]) {
           if (exe.Finished()) {
@@ -367,7 +352,8 @@ int main(int argc, char** argv) {
 
             const auto q = q_data.front();
             q_data.pop();
-            exe.StartQuery(q);
+            exe.SetQuery(q);
+            exe.StartQuery();
           } else {
             exe.Resume();
           }
@@ -380,21 +366,53 @@ int main(int argc, char** argv) {
         redwood::DeviceStreamSynchronize(next);
         cur_stream = next;
         rdc::ClearBuffer(tid, cur_stream);
-
-        // for (auto& exe : exes[cur_stream])
-        //   std::cout << exe.my_tid_ << "-" << exe.my_stream_id_ << "-"
-        //             << exe.debug_uid_ << "\t" << exe.u_my_result_addr_ << " =
-        //             "
-        //             << exe.k_set_->WorstDist() << std::endl;
-        // for (auto& exe : exes[next])
-        //   std::cout << exe.my_tid_ << "-" << exe.my_stream_id_ << "-"
-        //             << exe.debug_uid_ << "\t" << exe.u_my_result_addr_ << " =
-        //             "
-        //             << exe.k_set_->WorstDist() << std::endl;
-        // exit(0);
       }
 
-      // Tasks are empty, but executors still not down yet.
+      // Tasks are empty, but both Batch still not empty yet.
+
+      // while (!exes[0].empty() || !exes[1].empty()) {
+      //   auto it = exes[cur_stream].begin();
+      //   std::cout << "[stream " << cur_stream
+      //             << "] Now processing the remaining: "
+      //             << std::distance(it, std::end(exes[cur_stream])) <<
+      //             std::endl;
+
+      //   constexpr auto threshold = 64;
+      //   if (std::distance(it, std::end(exes[cur_stream])) < threshold) {
+      //     // Too small to offload to GPU, just do them on CPU
+
+      //     // redwood::DeviceStreamSynchronize(next);
+      //     for (auto& exe : exes[0]) {
+      //       exe.CPUTraverse();
+      //       final_results.push_back(exe.k_set_->WorstDist());
+      //     }
+      //     for (auto& exe : exes[1]) {
+      //       exe.CPUTraverse();
+      //       final_results.push_back(exe.k_set_->WorstDist());
+      //     }
+
+      //     break;
+
+      //   } else {
+      //     while (it != exes[cur_stream].end()) {
+      //       if (it->Finished()) {
+      //         final_results.push_back(it->k_set_->WorstDist());
+      //         it = exes[cur_stream].erase(it);
+      //       } else {
+      //         it->Resume();
+      //         ++it;
+      //       }
+      //     }
+
+      //     rdc::LuanchKernelAsync(tid, cur_stream);
+      //     const auto next = rdc::NextStream(cur_stream);
+      //     redwood::DeviceStreamSynchronize(next);
+      //     cur_stream = next;
+      //     rdc::ClearBuffer(tid, cur_stream);
+      //   }
+      // }
+
+      // exit(0);
     });
   }
 

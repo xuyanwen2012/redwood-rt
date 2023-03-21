@@ -100,6 +100,10 @@ _NODISCARD T GetResultValueUnchecked(const int tid, const int stream_id) {
 }
 
 inline void LuanchKernelAsync(const int tid, const int stream_id) {
+  // std::cout << "[stream " << stream_id << "] LuanchKernelAsync  "
+  // << rhs[tid].UsmBuffer(stream_id).Size() << " items in buffer."
+  // << std::endl;
+
   // TODO: Need to select User's kernel
   redwood::ProcessKnnAsync(
       rhs[tid].UsmBuffer(stream_id).LData(), /* Buffered data to process */

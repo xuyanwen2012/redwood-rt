@@ -8,14 +8,16 @@
 #include "../LeafNodeTable.hpp"
 #include "../Utils.hpp"
 #include "AppParams.hpp"
+#include "Redwood/Kernels.hpp"
 #include "Redwood/Point.hpp"
+#include "Redwood/Usm.hpp"
 
-template <typename T>
-T* MyMalloc(int n) {
-  return static_cast<T*>(malloc(n * sizeof(T)));
-}
+// template <typename T>
+// T* MyMalloc(int n) {
+//   return static_cast<T*>(malloc(n * sizeof(T)));
+// }
 
-void MyFree(void* ptr) { free(ptr); }
+// void MyFree(void* ptr) { free(ptr); }
 
 namespace rdc {
 
@@ -32,17 +34,22 @@ template <typename T>
 struct ReducerHandler {
   void Init() {
     for (int i = 0; i < kNumStreams; ++i) {
-      usm_leaf_idx[i] = MyMalloc<int>(app_params.batch_size);
-      usm_query_point[i] = MyMalloc<T>(app_params.batch_size);
-      usm_result[i] = MyMalloc<float>(app_params.batch_size);
+      usm_leaf_idx[i] = redwood::UsmMalloc<int>(app_params.batch_size);
+      usm_query_point[i] = redwood::UsmMalloc<T>(app_params.batch_size);
+      usm_result[i] = redwood::UsmMalloc<float>(app_params.batch_size);
+
+      // CUDA Only
+      redwood::AttachStreamMem(i, usm_leaf_idx[i]);
+      redwood::AttachStreamMem(i, usm_query_point[i]);
+      redwood::AttachStreamMem(i, usm_result[i]);
     }
   }
 
   void Release() {
     for (int i = 0; i < kNumStreams; ++i) {
-      MyFree(usm_leaf_idx[i]);
-      MyFree(usm_query_point[i]);
-      MyFree(usm_result[i]);
+      redwood::UsmFree(usm_leaf_idx[i]);
+      redwood::UsmFree(usm_query_point[i]);
+      redwood::UsmFree(usm_result[i]);
     }
   }
 
@@ -138,19 +145,28 @@ void Debug(const int* u_leaf_indices, const Point4F* u_q_points,
 }
 
 inline void LuanchKernelAsync(const int tid, const int stream_id) {
-  // std::cout << "[stream " << stream_id << "] Collected  "
+  // std::cout << "[stream " << stream_id << "] LuanchKernelAsync  "
   // << rhs[tid].num_actives[stream_id] << " items in buffer."
   // << std::endl;
 
-  // TODO: Need to select User's kernel
-  Debug<32>(rhs[tid].usm_leaf_idx[stream_id],     //
-            rhs[tid].usm_query_point[stream_id],  //
-            rhs[tid].num_actives[stream_id],      //
-            rhs[tid].usm_result[stream_id],       //
-            rdc::LntDataAddr(),                   /* Shared data */
-            nullptr,                              /* Ignore for now */
-            app_params.max_leaf_size,             //
-            stream_id);
+  redwood::ProcessNnAsync(rhs[tid].usm_leaf_idx[stream_id],     //
+                          rhs[tid].usm_query_point[stream_id],  //
+                          rhs[tid].num_actives[stream_id],      //
+                          rhs[tid].usm_result[stream_id],       //
+                          rdc::LntDataAddr(),        /* Shared data */
+                          nullptr,                   /* Ignore for now */
+                          app_params.max_leaf_size,  //
+                          stream_id);
+
+  // // TODO: Need to select User's kernel
+  // Debug<32>(rhs[tid].usm_leaf_idx[stream_id],     //
+  //           rhs[tid].usm_query_point[stream_id],  //
+  //           rhs[tid].num_actives[stream_id],      //
+  //           rhs[tid].usm_result[stream_id],       //
+  //           rdc::LntDataAddr(),                   /* Shared data */
+  //           nullptr,                              /* Ignore for now */
+  //           app_params.max_leaf_size,             //
+  //           stream_id);
 }
 
 }  // namespace rdc

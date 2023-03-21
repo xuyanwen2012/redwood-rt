@@ -94,34 +94,40 @@ void ProcessNnAsync(const int* u_leaf_indices,  /**/
 
   switch (max_leaf_size) {
     case 1024:
-      CudaNnDebug<1024><<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
-          u_leaf_indices, u_q_points, num_active_leafs, out, u_lnt_data,
-          u_lnt_sizes);
+      FindMinDistWarp6<1024>
+          <<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
+              u_leaf_indices, u_q_points, num_active_leafs, out, u_lnt_data,
+              u_lnt_sizes);
       break;
     case 512:
-      CudaNnDebug<512><<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
-          u_leaf_indices, u_q_points, num_active_leafs, out, u_lnt_data,
-          u_lnt_sizes);
+      FindMinDistWarp6<512>
+          <<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
+              u_leaf_indices, u_q_points, num_active_leafs, out, u_lnt_data,
+              u_lnt_sizes);
       break;
     case 256:
-      CudaNnDebug<256><<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
-          u_leaf_indices, u_q_points, num_active_leafs, out, u_lnt_data,
-          u_lnt_sizes);
+      FindMinDistWarp6<256>
+          <<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
+              u_leaf_indices, u_q_points, num_active_leafs, out, u_lnt_data,
+              u_lnt_sizes);
       break;
     case 128:
-      CudaNnDebug<128><<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
-          u_leaf_indices, u_q_points, num_active_leafs, out, u_lnt_data,
-          u_lnt_sizes);
+      FindMinDistWarp6<128>
+          <<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
+              u_leaf_indices, u_q_points, num_active_leafs, out, u_lnt_data,
+              u_lnt_sizes);
       break;
     case 64:
-      CudaNnDebug<64><<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
-          u_leaf_indices, u_q_points, num_active_leafs, out, u_lnt_data,
-          u_lnt_sizes);
+      FindMinDistWarp6<64>
+          <<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
+              u_leaf_indices, u_q_points, num_active_leafs, out, u_lnt_data,
+              u_lnt_sizes);
       break;
     case 32:
-      CudaNnDebug<32><<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
-          u_leaf_indices, u_q_points, num_active_leafs, out, u_lnt_data,
-          u_lnt_sizes);
+      FindMinDistWarp6<32>
+          <<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
+              u_leaf_indices, u_q_points, num_active_leafs, out, u_lnt_data,
+              u_lnt_sizes);
       break;
     default:
       std::cout << "Should not happen." << std::endl;
