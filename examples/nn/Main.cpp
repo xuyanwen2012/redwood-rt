@@ -268,8 +268,10 @@ int main(int argc, char** argv) {
   std::cout << "Making tasks..." << std::endl;
 
   static auto rand_point4f = []() {
-    return Point4F{MyRand(0.0f, 1000.0f), MyRand(0.0f, 1000.0f),
-                   MyRand(0.0f, 1000.0f), 1.0f};
+    return Point4F{MyRand(0.0f, 100.0f), MyRand(0.0f, 100.0f),
+                   MyRand(0.0f, 100.0f), MyRand(0.0f, 100.0f)};
+    // return Point4F{MyRand(0.0f, 1000.0f), MyRand(0.0f, 1000.0f),
+    //                MyRand(0.0f, 1000.0f), 1.0f};
   };
 
   std::queue<Point4F> q_data;
@@ -288,7 +290,6 @@ int main(int argc, char** argv) {
       while (!q_data.empty()) {
         const auto q = q_data.front();
         q_data.pop();
-
         exe.SetQuery(q);
         exe.CPUTraverse();
         final_results.push_back(exe.k_set_->WorstDist());

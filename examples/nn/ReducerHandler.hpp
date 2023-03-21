@@ -149,24 +149,24 @@ inline void LuanchKernelAsync(const int tid, const int stream_id) {
   // << rhs[tid].num_actives[stream_id] << " items in buffer."
   // << std::endl;
 
-  redwood::ProcessNnAsync(rhs[tid].usm_leaf_idx[stream_id],     //
-                          rhs[tid].usm_query_point[stream_id],  //
-                          rhs[tid].num_actives[stream_id],      //
-                          rhs[tid].usm_result[stream_id],       //
-                          rdc::LntDataAddr(),        /* Shared data */
-                          nullptr,                   /* Ignore for now */
-                          app_params.max_leaf_size,  //
-                          stream_id);
+  // redwood::ProcessNnAsync(rhs[tid].usm_leaf_idx[stream_id],     //
+  //                         rhs[tid].usm_query_point[stream_id],  //
+  //                         rhs[tid].num_actives[stream_id],      //
+  //                         rhs[tid].usm_result[stream_id],       //
+  //                         rdc::LntDataAddr(),        /* Shared data */
+  //                         nullptr,                   /* Ignore for now */
+  //                         app_params.max_leaf_size,  //
+  //                         stream_id);
 
-  // // TODO: Need to select User's kernel
-  // Debug<32>(rhs[tid].usm_leaf_idx[stream_id],     //
-  //           rhs[tid].usm_query_point[stream_id],  //
-  //           rhs[tid].num_actives[stream_id],      //
-  //           rhs[tid].usm_result[stream_id],       //
-  //           rdc::LntDataAddr(),                   /* Shared data */
-  //           nullptr,                              /* Ignore for now */
-  //           app_params.max_leaf_size,             //
-  //           stream_id);
+  // TODO: Need to select User's kernel
+  Debug<32>(rhs[tid].usm_leaf_idx[stream_id],     //
+            rhs[tid].usm_query_point[stream_id],  //
+            rhs[tid].num_actives[stream_id],      //
+            rhs[tid].usm_result[stream_id],       //
+            rdc::LntDataAddr(),                   /* Shared data */
+            nullptr,                              /* Ignore for now */
+            app_params.max_leaf_size,             //
+            stream_id);
 }
 
 }  // namespace rdc
