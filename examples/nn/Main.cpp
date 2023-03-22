@@ -426,8 +426,8 @@ int main(int argc, char** argv) {
     TimeTask("Traversal", sequential_traversal);
 
   } else {
-    // TimeTask("Traversal", single_buffer_traversal);
-    TimeTask("Traversal", double_buffer_traversal);
+    TimeTask("Traversal", single_buffer_traversal);
+    // TimeTask("Traversal", double_buffer_traversal);
   }
 
   std::sort(final_results.begin(), final_results.end(),

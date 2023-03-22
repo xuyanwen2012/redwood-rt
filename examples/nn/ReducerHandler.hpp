@@ -27,8 +27,6 @@ template <typename T>
 struct ReducerHandler {
   void Init() {
     for (int i = 0; i < kNumStreams; ++i) {
-      // usm_leaf_idx[i].reserve(app_params.batch_size);
-      // usm_query_point[i].reserve(app_params.batch_size);
       usm_leaf_idx[i] = redwood::UsmMalloc<int>(app_params.batch_size);
       usm_query_point[i] = redwood::UsmMalloc<T>(app_params.batch_size);
       usm_result[i] = redwood::UsmMalloc<float>(app_params.batch_size);
@@ -56,9 +54,6 @@ struct ReducerHandler {
   std::array<int*, kNumStreams> usm_leaf_idx;
   std::array<T*, kNumStreams> usm_query_point;
 
-  // std::array<redwood::UsmVector<int>, kNumStreams> usm_leaf_idx;
-  // std::array<redwood::UsmVector<T>, kNumStreams> usm_query_point;
-
   // In BH, this is a single result (T)
   // In NN, this is (batch_size * T)
   // In KNN, this is (k * batch_size * T)
@@ -79,9 +74,6 @@ inline void ReleaseReducers() {
 
 inline void ReduceLeafNode(const int tid, const int stream_id,
                            const int node_idx, const Point4F& q) {
-  // rhs[tid].usm_leaf_idx[stream_id].push_back(node_idx);
-  // rhs[tid].usm_query_point[stream_id].push_back(q);
-
   const auto cur = rhs[tid].num_actives[stream_id];
 
   rhs[tid].usm_leaf_idx[stream_id][cur] = node_idx;
@@ -92,10 +84,6 @@ inline void ReduceLeafNode(const int tid, const int stream_id,
 }
 
 inline void ClearBuffer(const int tid, const int stream_id) {
-  // rhs[tid].usm_leaf_idx[stream_id].clear();
-  // rhs[tid].usm_query_point[stream_id].clear();
-
-  rhs[tid].num_actives[stream_id] = 0;
   rhs[tid].num_actives[stream_id] = 0;
 }
 
@@ -149,24 +137,24 @@ inline void LuanchKernelAsync(const int tid, const int stream_id) {
   // << rhs[tid].num_actives[stream_id] << " items in buffer."
   // << std::endl;
 
-  redwood::ProcessNnAsync(rhs[tid].usm_leaf_idx[stream_id],     //
-                          rhs[tid].usm_query_point[stream_id],  //
-                          rhs[tid].num_actives[stream_id],      //
-                          rhs[tid].usm_result[stream_id],       //
-                          rdc::LntDataAddr(),        /* Shared data */
-                          nullptr,                   /* Ignore for now */
-                          app_params.max_leaf_size,  //
-                          stream_id);
+  // redwood::ProcessNnAsync(rhs[tid].usm_leaf_idx[stream_id],     //
+  //                         rhs[tid].usm_query_point[stream_id],  //
+  //                         rhs[tid].num_actives[stream_id],      //
+  //                         rhs[tid].usm_result[stream_id],       //
+  //                         rdc::LntDataAddr(),        /* Shared data */
+  //                         nullptr,                   /* Ignore for now */
+  //                         app_params.max_leaf_size,  //
+  //                         stream_id);
 
-  // // TODO: Need to select User's kernel
-  // Debug(rhs[tid].usm_leaf_idx[stream_id],     //
-  //       rhs[tid].usm_query_point[stream_id],  //
-  //       rhs[tid].num_actives[stream_id],      //
-  //       rhs[tid].usm_result[stream_id],       //
-  //       rdc::LntDataAddr(),                   /* Shared data */
-  //       nullptr,                              /* Ignore for now */
-  //       app_params.max_leaf_size,             //
-  //       stream_id);
+  // TODO: Need to select User's kernel
+  Debug(rhs[tid].usm_leaf_idx[stream_id],     //
+        rhs[tid].usm_query_point[stream_id],  //
+        rhs[tid].num_actives[stream_id],      //
+        rhs[tid].usm_result[stream_id],       //
+        rdc::LntDataAddr(),                   /* Shared data */
+        nullptr,                              /* Ignore for now */
+        app_params.max_leaf_size,             //
+        stream_id);
 }
 
 }  // namespace rdc
