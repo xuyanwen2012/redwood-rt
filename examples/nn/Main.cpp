@@ -16,6 +16,7 @@
 #include "AppParams.hpp"
 #include "ReducerHandler.hpp"
 #include "Redwood/Core.hpp"
+#include "Redwood/Point.hpp"
 
 inline std::shared_ptr<kdt::KdTree> tree_ref;
 
@@ -178,7 +179,7 @@ class Executor {
     }
   }
 
- private:
+ public:
   Point4F my_query_point_;
 
   // this should point to USM region, unique to each executor.
@@ -274,205 +275,173 @@ int main(int argc, char** argv) {
   };
 
   std::queue<Point4F> q_data;
-  for (int i = 0; i < app_params.m; ++i) q_data.push(rand_point4f());
+  // for (int i = 0; i < app_params.m; ++i) q_data.push(rand_point4f());
+
+  for (int i = 0; i < app_params.m; ++i) {
+    auto q = rand_point4f();
+    q.data[0] = i;
+    q_data.push(q);
+  }
 
   std::cout << "Start Traversal " << std::endl;
 
   constexpr int tid = 0;
 
-  std::vector<float> final_results;
+  std::vector<std::pair<Point4F, float>> final_results;
+  // std::vector<float> final_results;
   final_results.reserve(app_params.m);
 
-  if (app_params.cpu) {
-    TimeTask("Traversal", [&] {
-      Executor exe{tid, 0, 0};
-      while (!q_data.empty()) {
-        const auto q = q_data.front();
-        q_data.pop();
-        exe.SetQuery(q);
-        exe.CPUTraverse();
-        final_results.push_back(exe.k_set_->WorstDist());
-      }
-    });
+  const auto sequential_traversal = [&] {
+    Executor exe{tid, 0, 0};
+    while (!q_data.empty()) {
+      const auto q = q_data.front();
+      q_data.pop();
+      exe.SetQuery(q);
+      exe.CPUTraverse();
+      final_results.emplace_back(q, exe.k_set_->WorstDist());
+    }
+  };
 
-  } else {
-    TimeTask("Traversal", [&] {
-      // Use redwood runtime
-      std::vector<Executor> exes;
-      exes.reserve(app_params.batch_size);
-      for (int i = 0; i < app_params.batch_size; ++i)
-        exes.emplace_back(tid, 0, i);
+  const auto single_buffer_traversal = [&] {
+    // Use redwood runtime
+    std::vector<Executor> exes;
+    exes.reserve(app_params.batch_size);
+    for (int i = 0; i < app_params.batch_size; ++i)
+      exes.emplace_back(tid, 0, i);
 
+    for (auto& exe : exes) {
+      if (q_data.empty()) break;
+      const auto q = q_data.front();
+      q_data.pop();
+      exe.SetQuery(q);
+      exe.StartQuery();
+    }
+
+    rdc::LuanchKernelAsync(tid, 0);
+    redwood::DeviceStreamSynchronize(0);
+    rdc::ClearBuffer(tid, 0);
+
+    while (!q_data.empty()) {
+      // 1k executors
       for (auto& exe : exes) {
-        if (q_data.empty()) break;
-        const auto q = q_data.front();
-        q_data.pop();
-        exe.SetQuery(q);
-        exe.StartQuery();
+        if (exe.Finished()) {
+          final_results.emplace_back(exe.my_query_point_,
+                                     exe.k_set_->WorstDist());
+
+          // Make there is task in the queue
+          if (!q_data.empty()) {
+            const auto q = q_data.front();
+            q_data.pop();
+            exe.SetQuery(q);
+            exe.StartQuery();
+          }
+
+        } else {
+          exe.Resume();
+        }
       }
 
       rdc::LuanchKernelAsync(tid, 0);
       redwood::DeviceStreamSynchronize(0);
       rdc::ClearBuffer(tid, 0);
+    }
+  };
 
-      while (!q_data.empty()) {
-        for (auto& exe : exes) {
-          if (exe.Finished()) {
-            final_results.push_back(exe.k_set_->WorstDist());
+  const auto double_buffer_traversal = [&] {
+    // Use redwood runtime
+    std::vector<Executor> exes[rdc::kNumStreams];
+    for (int stream_id = 0; stream_id < rdc::kNumStreams; ++stream_id) {
+      exes[stream_id].reserve(app_params.batch_size);
+      for (int i = 0; i < app_params.batch_size; ++i) {
+        exes[stream_id].emplace_back(tid, stream_id, i);
+      }
+    }
 
-            // Make there is task in the queue
-            if (q_data.empty()) {
-              break;
-            }
+    if constexpr (false) {
+      for (int stream_id = 0; stream_id < rdc::kNumStreams; ++stream_id)
+        for (auto& exe : exes[stream_id])
+          std::cout << exe.my_tid_ << "-" << exe.my_stream_id_ << "-"
+                    << exe.debug_uid_ << "\t" << exe.u_my_result_addr_
+                    << std::endl;
+    }
+
+    // During the initial iteration, we can assume they are all finished
+    // Batch A, first pass
+    for (auto& exe : exes[0]) {
+      if (q_data.empty()) break;
+      const auto q = q_data.front();
+      q_data.pop();
+      exe.SetQuery(q);
+      exe.StartQuery();
+    }
+    rdc::LuanchKernelAsync(tid, 0);
+
+    // Batch B, first pass
+    for (auto& exe : exes[1]) {
+      if (q_data.empty()) break;
+      const auto q = q_data.front();
+      q_data.pop();
+      exe.SetQuery(q);
+      exe.StartQuery();
+    }
+    rdc::LuanchKernelAsync(tid, 1);
+
+    redwood::DeviceStreamSynchronize(0);
+    rdc::ClearBuffer(tid, 0);
+
+    // Batch A or B, alternating
+    auto cur_stream = 0;
+    while (!q_data.empty()) {
+      for (auto& exe : exes[cur_stream]) {
+        if (exe.Finished()) {
+          final_results.emplace_back(exe.my_query_point_,
+                                     exe.k_set_->WorstDist());
+
+          if (!q_data.empty()) {
             const auto q = q_data.front();
             q_data.pop();
             exe.SetQuery(q);
             exe.StartQuery();
-
-          } else {
-            exe.Resume();
           }
+
+        } else {
+          exe.Resume();
         }
-
-        rdc::LuanchKernelAsync(tid, 0);
-        redwood::DeviceStreamSynchronize(0);
-        rdc::ClearBuffer(tid, 0);
       }
 
-      // Now there's still remaining
-      for (auto& exe : exes) {
-        exe.CPUTraverse();
-        final_results.push_back(exe.k_set_->WorstDist());
-      }
-    });
+      rdc::LuanchKernelAsync(tid, cur_stream);
 
-    // TimeTask("Traversal", [&] {
-    //   // Use redwood runtime
-    //   std::vector<Executor> exes[rdc::kNumStreams];
-    //   for (int stream_id = 0; stream_id < rdc::kNumStreams; ++stream_id) {
-    //     exes[stream_id].reserve(app_params.batch_size);
-    //     for (int i = 0; i < app_params.batch_size; ++i) {
-    //       exes[stream_id].emplace_back(tid, stream_id, i);
-    //     }
-    //   }
+      // Switch buffer ( A->B, B-A)
+      const auto next = rdc::NextStream(cur_stream);
+      redwood::DeviceStreamSynchronize(next);
+      cur_stream = next;
+      rdc::ClearBuffer(tid, cur_stream);
+    }
 
-    //   if constexpr (false) {
-    //     for (int stream_id = 0; stream_id < rdc::kNumStreams; ++stream_id)
-    //       for (auto& exe : exes[stream_id])
-    //         std::cout << exe.my_tid_ << "-" << exe.my_stream_id_ << "-"
-    //                   << exe.debug_uid_ << "\t" << exe.u_my_result_addr_
-    //                   << std::endl;
-    //   }
+    const auto next = rdc::NextStream(cur_stream);
+    redwood::DeviceStreamSynchronize(next);
+  };
 
-    //   // During the initial iteration, we can assume they are all finished
-    //   // Batch A, first pass
-    //   for (auto& exe : exes[0]) {
-    //     if (q_data.empty()) break;
-    //     const auto q = q_data.front();
-    //     q_data.pop();
-    //     exe.SetQuery(q);
-    //     exe.StartQuery();
-    //   }
-    //   rdc::LuanchKernelAsync(tid, 0);
+  if (app_params.cpu) {
+    TimeTask("Traversal", sequential_traversal);
 
-    //   // Batch B, first pass
-    //   for (auto& exe : exes[1]) {
-    //     if (q_data.empty()) break;
-    //     const auto q = q_data.front();
-    //     q_data.pop();
-    //     exe.SetQuery(q);
-    //     exe.StartQuery();
-    //   }
-    //   rdc::LuanchKernelAsync(tid, 1);
-
-    //   redwood::DeviceStreamSynchronize(0);
-    //   rdc::ClearBuffer(tid, 0);
-
-    //   // Batch A or B, alternating
-    //   auto cur_stream = 0;
-    //   while (!q_data.empty()) {
-    //     for (auto& exe : exes[cur_stream]) {
-    //       if (exe.Finished()) {
-    //         final_results.push_back(exe.k_set_->WorstDist());
-
-    //         // Make there is task in the queue
-    //         if (q_data.empty()) {
-    //           break;
-    //         }
-
-    //         const auto q = q_data.front();
-    //         q_data.pop();
-    //         exe.SetQuery(q);
-    //         exe.StartQuery();
-    //       } else {
-    //         exe.Resume();
-    //       }
-    //     }
-
-    //     rdc::LuanchKernelAsync(tid, cur_stream);
-
-    //     // Switch buffer ( A->B, B-A)
-    //     const auto next = rdc::NextStream(cur_stream);
-    //     redwood::DeviceStreamSynchronize(next);
-    //     cur_stream = next;
-    //     rdc::ClearBuffer(tid, cur_stream);
-    //   }
-
-    //   // Tasks are empty, but both Batch still not empty yet.
-
-    //   // while (!exes[0].empty() || !exes[1].empty()) {
-    //   //   auto it = exes[cur_stream].begin();
-    //   //   std::cout << "[stream " << cur_stream
-    //   //             << "] Now processing the remaining: "
-    //   //             << std::distance(it, std::end(exes[cur_stream])) <<
-    //   //             std::endl;
-
-    //   //   constexpr auto threshold = 64;
-    //   //   if (std::distance(it, std::end(exes[cur_stream])) < threshold) {
-    //   //     // Too small to offload to GPU, just do them on CPU
-
-    //   //     // redwood::DeviceStreamSynchronize(next);
-    //   //     for (auto& exe : exes[0]) {
-    //   //       exe.CPUTraverse();
-    //   //       final_results.push_back(exe.k_set_->WorstDist());
-    //   //     }
-    //   //     for (auto& exe : exes[1]) {
-    //   //       exe.CPUTraverse();
-    //   //       final_results.push_back(exe.k_set_->WorstDist());
-    //   //     }
-
-    //   //     break;
-
-    //   //   } else {
-    //   //     while (it != exes[cur_stream].end()) {
-    //   //       if (it->Finished()) {
-    //   //         final_results.push_back(it->k_set_->WorstDist());
-    //   //         it = exes[cur_stream].erase(it);
-    //   //       } else {
-    //   //         it->Resume();
-    //   //         ++it;
-    //   //       }
-    //   //     }
-
-    //   //     rdc::LuanchKernelAsync(tid, cur_stream);
-    //   //     const auto next = rdc::NextStream(cur_stream);
-    //   //     redwood::DeviceStreamSynchronize(next);
-    //   //     cur_stream = next;
-    //   //     rdc::ClearBuffer(tid, cur_stream);
-    //   //   }
-    //   // }
-
-    //   // exit(0);
-    // });
+  } else {
+    // TimeTask("Traversal", single_buffer_traversal);
+    TimeTask("Traversal", double_buffer_traversal);
   }
 
-  std::sort(final_results.begin(), final_results.end());
-  for (int i = 0; i < 32; ++i) {
+  std::sort(final_results.begin(), final_results.end(),
+            [](const auto& a, const auto& b) {
+              return a.first.data[0] < b.first.data[0];
+            });
+
+  for (int i = 0; i < 16; ++i) {
     const auto q = final_results[i];
-    std::cout << "final " << i << ": " << q << std::endl;
+    std::cout << "final " << i << ": " << q.first << " - " << q.second
+              << std::endl;
   }
 
-  std::cout << "final_results.size() " << final_results.size() << std::endl;
+  // std::cout << "final_results.size() " << final_results.size() << std::endl;
 
   rdc::ReleaseReducers();
   return EXIT_SUCCESS;
