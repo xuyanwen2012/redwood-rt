@@ -72,7 +72,6 @@ class Executor {
  protected:
   void Execute() {
     if (state_ == ExecutionState::kWorking) goto my_resume_point;
-
     state_ = ExecutionState::kWorking;
     cur_ = tree_ref->root_;
 
@@ -319,18 +318,17 @@ int main(int argc, char** argv) {
       while (!q_data.empty()) {
         for (auto& exe : exes) {
           if (exe.Finished()) {
-            // std::cout << exe.k_set_->WorstDist() << std::endl;
             final_results.push_back(exe.k_set_->WorstDist());
 
             // Make there is task in the queue
             if (q_data.empty()) {
               break;
             }
-
             const auto q = q_data.front();
             q_data.pop();
             exe.SetQuery(q);
             exe.StartQuery();
+
           } else {
             exe.Resume();
           }
@@ -343,7 +341,6 @@ int main(int argc, char** argv) {
 
       // Now there's still remaining
       for (auto& exe : exes) {
-        // std::cout << " - " << exe.stack_.size() << std::endl;
         exe.CPUTraverse();
         final_results.push_back(exe.k_set_->WorstDist());
       }
