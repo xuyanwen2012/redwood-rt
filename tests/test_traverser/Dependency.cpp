@@ -4,12 +4,13 @@
 #include <stack>
 
 #include "../../examples/Utils.hpp"
+#include "../../examples/knn/KnnSet.hpp"
 
 template <typename T>
 struct TreeNode {
   T val;
-  TreeNode* left;
-  TreeNode* right;
+  TreeNode<T>* left;
+  TreeNode<T>* right;
 
   explicit TreeNode(const T x) : val(x), left(), right() {}
 
@@ -34,24 +35,6 @@ ResultT Distance(const DataT p, const DataT q) {
   return sqrtf(dx * dx);
 }
 
-template <typename DataT, typename ResultT>
-void InorderTraversal(const TreeNode<DataT>* cur, const DataT& q) {
-  if (cur == nullptr) return;
-
-  if (cur->IsLeaf()) {
-    std::cout << "leaf " << cur->val << std::endl;
-
-  } else {
-    std::cout << "branch pre " << cur->val << std::endl;
-
-    InorderTraversal(cur->left, q);
-
-    std::cout << "branch in " << cur->val << std::endl;
-
-    InorderTraversal(cur->right, q);
-  }
-}
-
 enum class ExecutionState { kWorking, kFinished };
 
 template <typename DataT, typename ResultT>
@@ -60,14 +43,21 @@ class Executor {
   TreeNode<DataT>* cur_;
 
   DataT q_;
+  KnnSet<float, 1> k_set_;
 
   ExecutionState state_ = ExecutionState::kFinished;
 
  public:
-  void StartTraversal(TreeNode<DataT>* root, DataT q) {
+  void StartTraversal(TreeNode<DataT>* root, const DataT& q) {
     cur_ = root;
     q_ = q;
+    k_set_.Clear();
     Execute();
+  }
+
+  void StartCpuTraversal(TreeNode<DataT>* root, const DataT& q) {
+    k_set_.Clear();
+    InorderTraversal(root, q);
   }
 
   void Resume() { Execute(); }
@@ -77,6 +67,31 @@ class Executor {
   }
 
  private:
+  void InorderTraversal(const TreeNode<DataT>* cur, const DataT& q) {
+    if (cur == nullptr) return;
+
+    if (cur->IsLeaf()) {
+      // **** pre ****
+      std::cout << "leaf " << cur->val << std::endl;
+      const auto dist = Distance<DataT, ResultT>(cur_->val, q_);
+      k_set_.Insert(dist);
+      // *************
+
+    } else {
+      std::cout << "branch pre " << cur->val << std::endl;
+
+      // **** branch pre ****
+
+      // ********************
+
+      InorderTraversal(cur->left, q);
+
+      std::cout << "branch in " << cur->val << std::endl;
+
+      InorderTraversal(cur->right, q);
+    }
+  }
+
   void Execute() {
     if (state_ == ExecutionState::kWorking) goto my_resume_point;
     state_ = ExecutionState::kWorking;
@@ -125,7 +140,7 @@ int main() {
   constexpr int n = 32;
   srand(666);
 
-  TreeNode* root = nullptr;
+  TreeNode<float>* root = nullptr;
 
   for (int i = 0; i < n; i++) {
     const float val = rand() % 1000;
@@ -136,7 +151,9 @@ int main() {
 
   float q = 0.5f;
 
-  InorderTraversal<float, float>(root, q);
+  Executor<float, float> a{};
+
+  a.StartCpuTraversal(root, q);
 
   std::cout << "-----------------------" << std::endl;
 

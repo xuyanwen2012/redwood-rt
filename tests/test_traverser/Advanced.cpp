@@ -5,17 +5,19 @@
 
 #include "../../examples/Utils.hpp"
 
+template <typename T>
 struct TreeNode {
-  int val;
-  TreeNode* left;
-  TreeNode* right;
+  T val;
+  TreeNode<T>* left;
+  TreeNode<T>* right;
 
-  explicit TreeNode(const int x) : val(x), left(), right() {}
+  explicit TreeNode(const T x) : val(x), left(), right() {}
 
   _NODISCARD bool IsLeaf() const { return left == nullptr && right == nullptr; }
 };
 
-TreeNode* insert(TreeNode* root, const int val) {
+template <typename T>
+TreeNode<T>* insert(TreeNode<T>* root, const T val) {
   if (root == nullptr) return new TreeNode(val);
 
   if (val < root->val)
@@ -26,7 +28,14 @@ TreeNode* insert(TreeNode* root, const int val) {
   return root;
 }
 
-void InorderTraversal(const TreeNode* cur) {
+template <typename DataT, typename ResultT>
+ResultT Distance(const DataT p, const DataT q) {
+  ResultT dx = p - q;
+  return sqrtf(dx * dx);
+}
+
+template <typename DataT, typename ResultT>
+void InorderTraversal(const TreeNode<DataT>* cur, const DataT& q) {
   if (cur == nullptr) return;
 
   if (cur->IsLeaf()) {
@@ -35,25 +44,29 @@ void InorderTraversal(const TreeNode* cur) {
   } else {
     std::cout << "branch pre " << cur->val << std::endl;
 
-    InorderTraversal(cur->left);
+    InorderTraversal<DataT, ResultT>(cur->left, q);
 
     std::cout << "branch in " << cur->val << std::endl;
 
-    InorderTraversal(cur->right);
+    InorderTraversal<DataT, ResultT>(cur->right, q);
   }
 }
 
 enum class ExecutionState { kWorking, kFinished };
 
+template <typename DataT, typename ResultT>
 class Executor {
-  std::stack<TreeNode*> node_stack_;
-  TreeNode* cur_;
+  std::stack<TreeNode<DataT>*> node_stack_;
+  TreeNode<DataT>* cur_;
+
+  DataT q_;
 
   ExecutionState state_ = ExecutionState::kFinished;
 
  public:
-  void StartTraversal(TreeNode* root) {
+  void StartTraversal(TreeNode<DataT>* root, DataT q) {
     cur_ = root;
+    q_ = q;
     Execute();
   }
 
@@ -112,21 +125,24 @@ int main() {
   constexpr int n = 32;
   srand(666);
 
-  TreeNode* root = nullptr;
+  TreeNode<float>* root = nullptr;
 
   for (int i = 0; i < n; i++) {
-    const int val = rand() % 1000;
+    const float val = rand() % 1000;
     root = insert(root, val);
   }
 
   std::cout << "Inorder Traversal of the Binary Search Tree:\n";
-  InorderTraversal(root);
+
+  float q = 0.5f;
+
+  InorderTraversal<float, float>(root, q);
 
   std::cout << "-----------------------" << std::endl;
 
-  Executor exe{};
+  Executor<float, float> exe{};
 
-  exe.StartTraversal(root);
+  exe.StartTraversal(root, q);
 
   while (!exe.Finished()) {
     exe.Resume();
