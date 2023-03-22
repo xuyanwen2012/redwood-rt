@@ -132,15 +132,10 @@ void Debug(const int* u_leaf_indices, const Point4F* u_q_points,
     for (int j = 0; j < LeafSize; ++j) {
       const auto p = u_lnt_data[leaf_id_to_load * LeafSize + j];
       const auto dist = KernelFuncKnn(p, q);
-      // std::cout << dist << std::endl;
       my_min = std::min(my_min, dist);
     }
 
     outs[i] = std::min(outs[i], my_min);
-    // outs[i] = my_min;
-    // std::cout << "outs[i]: " << outs[i] << std::endl;
-    // std::cout << "my_min: " << my_min << std::endl;
-    // exit(0);
   }
 }
 
