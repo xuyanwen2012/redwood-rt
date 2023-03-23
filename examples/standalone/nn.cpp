@@ -10,6 +10,7 @@
 
 #include "../cxxopts.hpp"
 #include "AppParams.hpp"
+#include "DistanceMetrics.hpp"
 #include "LoadFile.hpp"
 #include "Redwood/Macros.hpp"
 #include "Redwood/Point.hpp"
@@ -19,7 +20,6 @@ class KdTree;
 }
 
 // Global vars
-AppParams app_params;
 std::shared_ptr<kdt::KdTree> tree_ref;
 
 // Debug
@@ -32,23 +32,6 @@ std::vector<Point4F> lnt;
 _NODISCARD inline const Point4F* LntDataAddrAt(const int node_idx) {
   return lnt.data() + node_idx * app_params.max_leaf_size;
 }
-
-namespace dist {
-struct Euclidean {
-  float operator()(const Point4F& p, const Point4F& q) const {
-    const float dx = p.data[0] - q.data[0];
-    const float dy = p.data[1] - q.data[1];
-    const float dz = p.data[2] - q.data[2];
-    const float dw = p.data[3] - q.data[3];
-    return std::sqrt(dx * dx + dy * dy + dz * dz + dw * dw);
-  }
-
-  float operator()(const float a, const float b) const {
-    const float dx = a - b;
-    return std::sqrt(dx * dx);
-  }
-};
-}  // namespace dist
 
 namespace kdt {
 enum class Dir { kLeft = 0, kRight };
