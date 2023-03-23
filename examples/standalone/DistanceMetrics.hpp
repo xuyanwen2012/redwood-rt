@@ -1,8 +1,11 @@
 #pragma once
 
-#include "Redwood/Points.hpp"
+#include <cmath>
+
+#include "Redwood/Point.hpp"
 
 namespace dist {
+
 struct Euclidean {
   float operator()(const Point4F& p, const Point4F& q) const {
     const float dx = p.data[0] - q.data[0];
@@ -17,4 +20,5 @@ struct Euclidean {
     return std::sqrt(dx * dx);
   }
 };
+
 }  // namespace dist
