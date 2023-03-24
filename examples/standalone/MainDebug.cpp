@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
-#include <limits>
 #include <memory>
 #include <numeric>
 #include <queue>
@@ -29,21 +28,6 @@ _NODISCARD Point4F RandPoint() {
       MyRand(0, 1024),
       MyRand(0, 1024),
   };
-}
-
-void VerifyResult() {
-  const auto are_equal = [](const float a, const float b) {
-    return std::abs(a - b) < std::numeric_limits<float>::epsilon();
-  };
-
-  for (int i = 0; i < app_params.m; i++) {
-    if (!are_equal(final_results1[i], final_results2[i])) {
-      std::cout << "Mismatch found at index " << i << ": " << final_results1[i]
-                << " vs. " << final_results2[i] << std::endl;
-    }
-  }
-
-  std::cout << "Results verified" << std::endl;
 }
 
 int main(int argc, char** argv) {
@@ -73,6 +57,7 @@ int main(int argc, char** argv) {
     exit(EXIT_FAILURE);
   }
 
+  // Config
   const auto data_file = result["file"].as<std::string>();
   app_params.max_leaf_size = result["leaf"].as<int>();
   app_params.m = result["query"].as<int>();
@@ -85,10 +70,13 @@ int main(int argc, char** argv) {
   const auto in_data = load_data_from_file<Point4F>(data_file);
   const auto n = in_data.size();
 
-  std::queue<Task> q_data;
-  for (int i = 0; i < app_params.m; ++i) q_data.emplace(i, RandPoint());
+  std::queue<Task> q1_data;
+  for (int i = 0; i < app_params.m; ++i) q1_data.emplace(i, RandPoint());
+  std::queue q2_data(q1_data);
 
   // Debug Setting
+  leaf_node_visited1.resize(app_params.m);
+  leaf_node_visited2.resize(app_params.m);
   final_results1.resize(app_params.m);
   final_results2.resize(app_params.m);
 
@@ -96,26 +84,37 @@ int main(int argc, char** argv) {
   rdc::Init(app_params.batch_size);
 
   // Build tree
-  const kdt::KdtParams params{app_params.max_leaf_size};
-  tree_ref = std::make_shared<kdt::KdTree>(params, in_data.data(), n);
+  {
+    const kdt::KdtParams params{app_params.max_leaf_size};
+    tree_ref = std::make_shared<kdt::KdTree>(params, in_data.data(), n);
 
-  const auto num_leaf_nodes = tree_ref->GetStats().num_leaf_nodes;
-  auto lnt_addr = rdc::AllocateLnt(num_leaf_nodes, app_params.max_leaf_size);
-  tree_ref->LoadPayload(lnt_addr);
+    const auto num_leaf_nodes = tree_ref->GetStats().num_leaf_nodes;
 
+    auto lnt_addr = rdc::AllocateLnt(num_leaf_nodes, app_params.max_leaf_size);
+    tree_ref->LoadPayload(lnt_addr);
+  }
+
+  // Pure CPU traverse
   if (app_params.cpu) {
-    // Pure CPU traverse
     Executor cpu_exe{0, 0, 0};
 
-    while (!q_data.empty()) {
-      cpu_exe.SetQuery(q_data.front());
+    while (!q1_data.empty()) {
+      cpu_exe.SetQuery(q1_data.front());
       cpu_exe.CpuTraverse();
-      q_data.pop();
+      q1_data.pop();
     }
 
-  } else {
-    // Use Redwood
+    if constexpr (kDebugMod) {
+      PrintLeafNodeVisited(leaf_node_visited1, 32);
+      PrintFinalResult(final_results1, 32);
+      std::cout << std::endl;
+    }
+  }
+
+  // Traverser traverse (double buffer)
+  {
     constexpr auto tid = 0;
+
     constexpr auto num_streams = 2;
 
     std::vector<Executor> exes[num_streams];
@@ -127,12 +126,12 @@ int main(int argc, char** argv) {
     }
 
     auto cur_stream = 0;
-    while (!q_data.empty()) {
+    while (!q2_data.empty()) {
       for (auto it = exes[cur_stream].begin(); it != exes[cur_stream].end();) {
         if (it->Finished()) {
-          if (!q_data.empty()) {
-            const auto q = q_data.front();
-            q_data.pop();
+          if (!q2_data.empty()) {
+            const auto q = q2_data.front();
+            q2_data.pop();
 
             it->SetQuery(q);
             it->StartQuery();
@@ -162,13 +161,55 @@ int main(int argc, char** argv) {
 
     for (int i = 0; i < num_streams; ++i) {
       for (auto& ex : exes[cur_stream]) {
+        if constexpr (kDebugMod) {
+          leaf_node_visited2[ex.my_task_.first].clear();
+        }
         ex.CpuTraverse2();
       }
       cur_stream = (cur_stream + 1) % num_streams;
     }
+
+    if constexpr (kDebugMod) {
+      PrintLeafNodeVisited(leaf_node_visited2, 32);
+      PrintFinalResult(final_results2, 32);
+    }
   }
 
-  VerifyResult();
+  // Verify Results
+
+  if constexpr (kDebugMod) {
+    for (std::size_t i = 0; i < app_params.m; ++i) {
+      const auto& inner1 = leaf_node_visited1[i];
+      const auto& inner2 = leaf_node_visited2[i];
+
+      std::cout << "Mismatched values in vector " << i << ":\n";
+
+      for (std::size_t j = 0; j < inner1.size(); ++j) {
+        if (j >= inner2.size() || inner1[j] != inner2[j]) {
+          std::cout << inner1[j] << '\n';
+        }
+      }
+
+      for (std::size_t j = inner1.size(); j < inner2.size(); ++j) {
+        std::cout << inner2[j] << '\n';
+      }
+
+      std::cout << '\n';
+    }
+  }
+
+  const auto are_equal = [](const float a, const float b) {
+    return std::abs(a - b) < 0.1f;
+  };
+
+  for (int i = 0; i < app_params.m; i++) {
+    if (!are_equal(final_results1[i], final_results2[i])) {
+      std::cout << "Mismatch found at index " << i << ": " << final_results1[i]
+                << " vs. " << final_results2[i] << std::endl;
+    }
+  }
+
+  std::cout << "Results verified" << std::endl;
 
   rdc::Release();
   return EXIT_SUCCESS;

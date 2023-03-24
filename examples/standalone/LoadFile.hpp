@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <fstream>
 #include <iostream>
 #include <vector>
@@ -24,4 +25,31 @@ std::vector<T> load_data_from_file(const std::string& filename) {
   }
 
   return data;
+}
+
+template <typename T>
+std::vector<T> read_floats_from_file(const std::string& filename, const int n,
+                                     const int m) {
+  std::vector<T> in_data(n);
+  std::vector<T> q_data(m);
+
+  std::ifstream infile(filename, std::ios::binary);
+
+  infile.seekg(0, std::ios::end);
+  std::streamsize size = infile.tellg();
+  infile.seekg(0, std::ios::beg);
+
+  if (n + m > size / sizeof(T)) {
+    throw std::runtime_error("Not enough data in the file: " + filename);
+  }
+
+  if (infile) {
+    infile.read(reinterpret_cast<char*>(in_data.data()), n * sizeof(T));
+    infile.read(reinterpret_cast<char*>(q_data.data()), m * sizeof(T));
+    infile.close();
+  } else {
+    std::cerr << "Error opening file" << std::endl;
+  }
+
+  return in_data;
 }
