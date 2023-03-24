@@ -10,18 +10,11 @@
 
 using Task = std::pair<int, Point4F>;
 
-namespace redwood {
-template <typename T>
-_NODISCARD T* UsmAlloc(const int size) {
-  return static_cast<T*>(malloc(sizeof(T) * size));
-}
-
-void UsmFree(void* ptr) { free(ptr); }
-}  // namespace redwood
+#include "Redwood/Usm.hpp"
 
 namespace rdc {
 
-inline std::vector<Point4F> lnt;
+inline redwood::UsmVector<Point4F> lnt;
 
 _NODISCARD inline const Point4F* LntDataAddrAt(const int node_idx) {
   return lnt.data() + node_idx * app_params.max_leaf_size;
@@ -30,8 +23,8 @@ _NODISCARD inline const Point4F* LntDataAddrAt(const int node_idx) {
 // For NN and KNN
 struct Buffer {
   void Alloc(const int buffer_size) {
-    u_qs = redwood::UsmAlloc<Point4F>(buffer_size);
-    u_leaf_idx = redwood::UsmAlloc<int>(buffer_size);
+    u_qs = redwood::UsmMalloc<Point4F>(buffer_size);
+    u_leaf_idx = redwood::UsmMalloc<int>(buffer_size);
   }
 
   void DeAlloc() const {
@@ -57,7 +50,7 @@ struct Buffer {
 struct ResultBuffer {
   void Alloc(const int buffer_size, const int k = 1) {
     stored_k = k;
-    underlying_dat = redwood::UsmAlloc<float>(buffer_size * k);
+    underlying_dat = redwood::UsmMalloc<float>(buffer_size * k);
   }
 
   void DeAlloc() const { redwood::UsmFree(underlying_dat); }
@@ -125,25 +118,9 @@ void LaunchAsyncWorkQueue(const int stream_id) {
   std::cout << "rdc::LaunchAsyncWorkQueue " << stream_id << ", "
             << buffers[stream_id].Size() << " actives." << std::endl;
 
-  // for (int i = 0; i < app_params.batch_size; ++i)
-  //{
-  //	std::cout << result_addr[0].GetAddrAt(i) << " - " <<
-  //*result_addr[0].GetAddrAt(i) << std::endl;
-  // }
-
   DebugCpuReduction(buffers[stream_id], dist::Euclidean(),
                     result_addr[stream_id]);
 
-  // std::cout << std::endl;
-
   // You may reset the buffer?
-
-  // for (int i = 0; i < app_params.batch_size; ++i)
-  //{
-  //	std::cout << result_addr[0].GetAddrAt(i) << " - " <<
-  //*result_addr[0].GetAddrAt(i) << std::endl;
-  // }
-
-  // exit(0);
 }
 }  // namespace rdc

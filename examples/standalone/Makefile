@@ -1,4 +1,28 @@
 include ../../Makefile.inc
 
-all: 
-	$(CXX) $(CXXFLAGS) Main.cpp -I../../include
+NVCC = $(shell which nvcc)
+NVCCFLAGS = -std=c++14 -O3 -Xptxas -O3 --expt-relaxed-constexpr
+
+INCLUDES += -I../../accelerator/cuda/extern/cub-1.17.2/ -I../../accelerator/cuda/extern/thrust-1.17.2/
+
+ARCH = -arch=sm_53
+
+cpu:
+	$(CXX) Main.o libcpu.a -o cpu.out
+
+cuda: 
+	$(CXX) Main.o libcuda.a -L/usr/local/cuda/lib64 -lcudart -o cuda.out
+
+Main.o:
+	$(CXX) $(CXXFLAGS) -c Main.cpp -o Main.o
+
+cpu.o: Redwood/Cpu.cpp
+	$(CXX) $(CXXFLAGS) -c  Redwood/Cpu.cpp -o cpu.o
+	ar rcs libcpu.a cpu.o
+
+cuda.o: 
+	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $(ARCH) -c ./Redwood/Cuda.cu -o cuda.o
+	ar rcs libcuda.a cuda.o
+
+clean:
+	rm *.out *.o *.a
