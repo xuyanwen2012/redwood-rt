@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstddef>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -20,30 +21,13 @@
 #include "ReducerHandler.hpp"
 #include "Redwood/Redwood.hpp"
 
-Point4F RandPoint() {
+_NODISCARD Point4F RandPoint() {
   return {
       MyRand(0, 1024),
       MyRand(0, 1024),
       MyRand(0, 1024),
       MyRand(0, 1024),
   };
-}
-
-void PrintLeafNodeVisited(const std::vector<std::vector<int>>& d) {
-  for (auto i = 0u; i < d.size(); ++i) {
-    std::cout << "Query " << i << ": [";
-    for (const auto& elem : d[i]) {
-      std::cout << elem;
-      if (elem != d[i].back()) std::cout << ", ";
-    }
-    std::cout << "]" << std::endl;
-  }
-}
-
-void PrintFinalResult(const std::vector<float>& d) {
-  for (auto i = 0u; i < d.size(); ++i)
-    std::cout << "Query " << i << ": " << d[i] << '\n';
-  std::cout << std::endl;
 }
 
 int main(int argc, char** argv) {
@@ -87,13 +71,13 @@ int main(int argc, char** argv) {
   const auto in_data = load_data_from_file<Point4F>(data_file);
   const auto n = in_data.size();
 
-  // Debug
+  // Debug Setting
   leaf_node_visited1.resize(app_params.m);
   leaf_node_visited2.resize(app_params.m);
   final_results1.resize(app_params.m);
   final_results2.resize(app_params.m);
 
-  // Query (x2)
+  // Task Query (x2)
   std::queue<Task> q1_data;
   for (int i = 0; i < app_params.m; ++i) q1_data.emplace(i, RandPoint());
   std::queue q2_data(q1_data);
@@ -123,9 +107,9 @@ int main(int argc, char** argv) {
       q1_data.pop();
     }
 
-    // PrintLeafNodeVisited(leaf_node_visited1);
     if constexpr (kDebugMod) {
-      PrintFinalResult(final_results1);
+      PrintLeafNodeVisited(leaf_node_visited1, 32);
+      PrintFinalResult(final_results1, 32);
       std::cout << std::endl;
     }
   }
@@ -134,7 +118,7 @@ int main(int argc, char** argv) {
   {
     constexpr auto tid = 0;
 
-    constexpr auto num_streams = 1;
+    constexpr auto num_streams = 2;
 
     std::vector<Executor> exes[num_streams];
     for (int stream_id = 0; stream_id < num_streams; ++stream_id) {
@@ -148,8 +132,6 @@ int main(int argc, char** argv) {
     while (!q2_data.empty()) {
       for (auto it = exes[cur_stream].begin(); it != exes[cur_stream].end();) {
         if (it->Finished()) {
-          // final_results2[it->my_task_.first] = it->result_set->WorstDist();
-
           if (!q2_data.empty()) {
             const auto q = q2_data.front();
             q2_data.pop();
@@ -178,49 +160,25 @@ int main(int argc, char** argv) {
       rdc::ResetBuffer(tid, cur_stream);
     }
 
-    for (auto& ex : exes[cur_stream]) {
-      ex.ResumeNonStop();
+    redwood::DeviceSynchronize();
+
+    for (int i = 0; i < num_streams; ++i) {
+      for (auto& ex : exes[cur_stream]) {
+        if constexpr (kDebugMod) {
+          leaf_node_visited2[ex.my_task_.first].clear();
+        }
+        ex.CpuTraverse2();
+      }
+      cur_stream = (cur_stream + 1) % num_streams;
     }
 
-    //// Still some remaining
-    // int num_incomplete[num_streams];
-    // bool need_work;
-    // do
-    //{
-    //	num_incomplete[cur_stream] = 0;
-    //	for (auto& ex : exes[cur_stream])
-    //	{
-    //		if (!ex.Finished())
-    //		{
-    //			ex.Resume();
-    //			++num_incomplete[cur_stream];
-    //		}
-    //		else
-    //		{
-    //			// final_results2[ex.my_task_.first] =
-    // ex.result_set->WorstDist();
-    //		}
-    //	}
-
-    //	rdc::LaunchAsyncWorkQueue(cur_stream);
-
-    //	const auto next = (cur_stream + 1) % num_streams;
-    //	cur_stream = next;
-    //	redwood::DeviceStreamSynchronize(cur_stream);
-
-    //	rdc::buffers[cur_stream].Reset();
-
-    //	// Both stream must complete
-    //	need_work = false;
-    //	for (const int i : num_incomplete) need_work |= i > 0;
-    //}
-    // while (need_work);
-
-    // PrintLeafNodeVisited(leaf_node_visited2);
     if constexpr (kDebugMod) {
-      PrintFinalResult(final_results2);
+      PrintLeafNodeVisited(leaf_node_visited2, 32);
+      PrintFinalResult(final_results2, 32);
     }
   }
+
+  // Verify Results
 
   if constexpr (kDebugMod) {
     for (std::size_t i = 0; i < app_params.m; ++i) {
@@ -243,8 +201,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  // Verify Results
-
   const auto are_equal = [](const float a, const float b) {
     return std::abs(a - b) < 0.1f;
   };
@@ -255,6 +211,8 @@ int main(int argc, char** argv) {
                 << " vs. " << final_results2[i] << std::endl;
     }
   }
+
+  std::cout << "Results verified" << std::endl;
 
   rdc::Release();
   return EXIT_SUCCESS;

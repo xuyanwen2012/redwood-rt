@@ -55,7 +55,13 @@ class Executor {
     final_results1[my_task_.first] = result_set->WorstDist();
   }
 
-  void ResumeNonStop() { ExecuteNoCoreturn(); }
+  void CpuTraverse2() {
+    result_set->Reset();
+
+    TraversalRecursive2(tree_ref->root_);
+
+    final_results2[my_task_.first] = result_set->WorstDist();
+  }
 
  protected:
   void Execute() {
@@ -85,72 +91,6 @@ class Executor {
           return;
         my_resume_point:
           // ****************************
-
-          cur_ = nullptr;
-          continue;
-        }
-
-        // **** Reduction at tree node ****
-        const unsigned accessor_idx =
-            tree_ref->v_acc_[cur_->node_type.tree.idx_mid];
-        const float dist =
-            functor(tree_ref->in_data_ref_[accessor_idx], my_task_.second);
-
-        result_set->Insert(dist);
-        // **********************************
-
-        // Determine which child node to traverse next
-        const auto axis = cur_->node_type.tree.axis;
-        const auto train = tree_ref->in_data_ref_[accessor_idx].data[axis];
-        const auto dir = my_task_.second.data[axis] < train ? kdt::Dir::kLeft
-                                                            : kdt::Dir::kRight;
-
-        // Recursion 1
-        stack_.push_back({cur_, axis, train, dir});
-        cur_ = cur_->GetChild(dir);
-      }
-
-      if (!stack_.empty()) {
-        const auto [last_cur, axis, train, dir] = stack_.back();
-        stack_.pop_back();
-
-        if (const auto diff = functor(my_task_.second.data[axis], train);
-            diff < result_set->WorstDist()) {
-          // Recursion 2
-          cur_ = last_cur->GetChild(FlipDir(dir));
-        }
-      }
-    }
-
-    // Done traversals
-    state_ = ExecutionState::kFinished;
-
-    final_results2[my_task_.first] = result_set->WorstDist();
-  }
-
-  // basically a iterative version of nomal KNN.
-  void ExecuteNoCoreturn() {
-    constexpr dist::Euclidean functor;
-    cur_ = nullptr;
-
-    // Begin Iteration
-    while (cur_ != nullptr || !stack_.empty()) {
-      // Traverse all the way to left most leaf node
-      while (cur_ != nullptr) {
-        if (cur_->IsLeaf()) {
-          // **** Reduction at Leaf Node (replaced with Redwood API) ****
-
-          if constexpr (kDebugMod) {
-            leaf_node_visited2[my_task_.first].push_back(cur_->uid);
-          }
-
-          // **** Reduction at leaf node ****
-          for (int i = 0; i < rdc::stored_max_leaf_size; ++i) {
-            const float dist =
-                functor(rdc::LntDataAddrAt(cur_->uid)[i], my_task_.second);
-            result_set->Insert(dist);
-          }
-          // **********************************
 
           cur_ = nullptr;
           continue;
@@ -231,6 +171,47 @@ class Executor {
       if (const auto diff = functor(my_task_.second.data[axis], train);
           diff < result_set->WorstDist()) {
         TraversalRecursive(cur->GetChild(FlipDir(dir)));
+      }
+    }
+  }
+
+  void TraversalRecursive2(const kdt::Node* cur) {
+    constexpr dist::Euclidean functor;
+
+    if (cur->IsLeaf()) {
+      if constexpr (kDebugMod) {
+        leaf_node_visited2[my_task_.first].push_back(cur->uid);
+      }
+
+      // **** Reduction at leaf node ****
+      const auto leaf_addr = rdc::LntDataAddrAt(cur->uid);
+      for (int i = 0; i < rdc::stored_max_leaf_size; ++i) {
+        const float dist = functor(leaf_addr[i], my_task_.second);
+        result_set->Insert(dist);
+      }
+      // **********************************
+    } else {
+      // **** Reduction at tree node ****
+      const unsigned accessor_idx =
+          tree_ref->v_acc_[cur->node_type.tree.idx_mid];
+      const float dist =
+          functor(tree_ref->in_data_ref_[accessor_idx], my_task_.second);
+      result_set->Insert(dist);
+      // **********************************
+
+      // Determine which child node to traverse next
+      const auto axis = cur->node_type.tree.axis;
+      const auto train = tree_ref->in_data_ref_[accessor_idx].data[axis];
+      const auto dir = my_task_.second.data[axis] < train ? kdt::Dir::kLeft
+                                                          : kdt::Dir::kRight;
+
+      // Will update 'k_dist' (dependency)
+      TraversalRecursive2(cur->GetChild(dir));
+
+      // Check if we need to traverse the other side (optional)
+      if (const auto diff = functor(my_task_.second.data[axis], train);
+          diff < result_set->WorstDist()) {
+        TraversalRecursive2(cur->GetChild(FlipDir(dir)));
       }
     }
   }
