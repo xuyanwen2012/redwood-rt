@@ -62,13 +62,17 @@ void LaunchNnKenrnel(const int* u_leaf_indices,  /**/
                      float* u_out,               /* stream base addr */
                      const Point4F* u_lnt_data,  /**/
                      const int max_leaf_size, const int stream_id) {
+  // FindMinDistWarp6<<<1, 1024, 0, streams[stream_id]>>>(
+  //     u_leaf_indices, u_q_points, num_active_leafs, u_out, u_lnt_data,
+  //     max_leaf_size);
+
   CudaNaive<<<1, 1024, 0, streams[stream_id]>>>(u_leaf_indices, u_q_points,
                                                 num_active_leafs, u_out,
                                                 u_lnt_data, max_leaf_size);
 
   // CudaNnDebug<<<1, 1, 0, streams[stream_id]>>>(u_leaf_indices, u_q_points,
-  //                                              num_active_leafs, u_out,
-  //                                              u_lnt_data, max_leaf_size);
+  //  num_active_leafs, u_out,
+  //  u_lnt_data, max_leaf_size);
 }
 
 }  // namespace redwood

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <numeric>
@@ -133,7 +134,7 @@ int main(int argc, char** argv) {
   {
     constexpr auto tid = 0;
 
-    constexpr auto num_streams = 2;
+    constexpr auto num_streams = 1;
 
     std::vector<Executor> exes[num_streams];
     for (int stream_id = 0; stream_id < num_streams; ++stream_id) {
@@ -147,6 +148,8 @@ int main(int argc, char** argv) {
     while (!q2_data.empty()) {
       for (auto it = exes[cur_stream].begin(); it != exes[cur_stream].end();) {
         if (it->Finished()) {
+          // final_results2[it->my_task_.first] = it->result_set->WorstDist();
+
           if (!q2_data.empty()) {
             const auto q = q2_data.front();
             q2_data.pop();
@@ -175,29 +178,43 @@ int main(int argc, char** argv) {
       rdc::ResetBuffer(tid, cur_stream);
     }
 
-    // Still some remaining
-    int num_incomplete[num_streams];
-    bool need_work;
-    do {
-      num_incomplete[cur_stream] = 0;
-      for (auto& ex : exes[cur_stream]) {
-        if (!ex.Finished()) {
-          ex.Resume();
-          ++num_incomplete[cur_stream];
-        }
-      }
+    for (auto& ex : exes[cur_stream]) {
+      ex.ResumeNonStop();
+    }
 
-      rdc::LaunchAsyncWorkQueue(cur_stream);
+    //// Still some remaining
+    // int num_incomplete[num_streams];
+    // bool need_work;
+    // do
+    //{
+    //	num_incomplete[cur_stream] = 0;
+    //	for (auto& ex : exes[cur_stream])
+    //	{
+    //		if (!ex.Finished())
+    //		{
+    //			ex.Resume();
+    //			++num_incomplete[cur_stream];
+    //		}
+    //		else
+    //		{
+    //			// final_results2[ex.my_task_.first] =
+    // ex.result_set->WorstDist();
+    //		}
+    //	}
 
-      const auto next = (cur_stream + 1) % num_streams;
-      cur_stream = next;
-      redwood::DeviceStreamSynchronize(cur_stream);
-      rdc::buffers[cur_stream].Reset();
+    //	rdc::LaunchAsyncWorkQueue(cur_stream);
 
-      // Both stream must complete
-      need_work = false;
-      for (const int i : num_incomplete) need_work |= i > 0;
-    } while (need_work);
+    //	const auto next = (cur_stream + 1) % num_streams;
+    //	cur_stream = next;
+    //	redwood::DeviceStreamSynchronize(cur_stream);
+
+    //	rdc::buffers[cur_stream].Reset();
+
+    //	// Both stream must complete
+    //	need_work = false;
+    //	for (const int i : num_incomplete) need_work |= i > 0;
+    //}
+    // while (need_work);
 
     // PrintLeafNodeVisited(leaf_node_visited2);
     if constexpr (kDebugMod) {
@@ -205,50 +222,40 @@ int main(int argc, char** argv) {
     }
   }
 
-  // for (std::size_t i = 0; i < app_params.m; ++i) {
-  //   const auto& inner1 = leaf_node_visited1[i];
-  //   const auto& inner2 = leaf_node_visited2[i];
+  if constexpr (kDebugMod) {
+    for (std::size_t i = 0; i < app_params.m; ++i) {
+      const auto& inner1 = leaf_node_visited1[i];
+      const auto& inner2 = leaf_node_visited2[i];
 
-  //   std::cout << "Mismatched values in vector " << i << ":\n";
+      std::cout << "Mismatched values in vector " << i << ":\n";
 
-  //   for (std::size_t j = 0; j < inner1.size(); ++j) {
-  //     if (j >= inner2.size() || inner1[j] != inner2[j]) {
-  //       std::cout << inner1[j] << '\n';
-  //     }
-  //   }
+      for (std::size_t j = 0; j < inner1.size(); ++j) {
+        if (j >= inner2.size() || inner1[j] != inner2[j]) {
+          std::cout << inner1[j] << '\n';
+        }
+      }
 
-  //   for (std::size_t j = inner1.size(); j < inner2.size(); ++j) {
-  //     std::cout << inner2[j] << '\n';
-  //   }
+      for (std::size_t j = inner1.size(); j < inner2.size(); ++j) {
+        std::cout << inner2[j] << '\n';
+      }
 
-  //   std::cout << '\n';
-  // }
+      std::cout << '\n';
+    }
+  }
 
-  // Find the first mismatch between the two vectors
+  // Verify Results
 
-  auto areEqual = [](const float a, const float b) {
+  const auto are_equal = [](const float a, const float b) {
     return std::abs(a - b) < 0.1f;
   };
 
   for (int i = 0; i < app_params.m; i++) {
-    if (!areEqual(final_results1[i], final_results2[i])) {
+    if (!are_equal(final_results1[i], final_results2[i])) {
       std::cout << "Mismatch found at index " << i << ": " << final_results1[i]
                 << " vs. " << final_results2[i] << std::endl;
     }
   }
 
-  // // Print the indices and values of the mismatched elements
-  // if (const auto [fst, snd] = std::mismatch(
-  //         final_results1.begin(), final_results1.end(),
-  //         final_results2.begin());
-  //     fst != final_results1.end()) {
-  //   const auto index = std::distance(final_results1.begin(), fst);
-  //   std::cout << "Mismatch at index " << index << ": " << *fst << " vs. "
-  //             << *snd << "\n";
-  // } else {
-  //   std::cout << "Vectors are equal.\n";
-  // }
-
   rdc::Release();
-  return 0;
+  return EXIT_SUCCESS;
 }
