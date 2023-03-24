@@ -13,7 +13,7 @@ cpu:
 cuda: 
 	$(CXX) Main.o libcuda.a -L/usr/local/cuda/lib64 -lcudart -o cuda.out
 
-Main.o:
+Main.o: Main.cpp
 	$(CXX) $(CXXFLAGS) -c Main.cpp -o Main.o
 
 cpu.o: Redwood/Cpu.cpp

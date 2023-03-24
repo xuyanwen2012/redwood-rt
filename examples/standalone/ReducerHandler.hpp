@@ -3,21 +3,29 @@
 #include <array>
 
 #include "../Utils.hpp"
-#include "AppParams.hpp"
 #include "DistanceMetrics.hpp"
 #include "KnnSet.hpp"
 #include "Redwood/Point.hpp"
 
 using Task = std::pair<int, Point4F>;
 
-#include "Redwood/Usm.hpp"
+#include "Redwood/Kernels.hpp"
+#include "Redwood/Redwood.hpp"
 
 namespace rdc {
 
-inline redwood::UsmVector<Point4F> lnt;
+Point4F* lnt_base_addr = nullptr;
+int stored_max_leaf_size;
+
+_NODISCARD Point4F* AllocateLnt(const int num_leaf_nodes,
+                                const int max_leaf_size) {
+  stored_max_leaf_size = max_leaf_size;
+  lnt_base_addr = redwood::UsmMalloc<Point4F>(num_leaf_nodes * max_leaf_size);
+  return lnt_base_addr;
+}
 
 _NODISCARD inline const Point4F* LntDataAddrAt(const int node_idx) {
-  return lnt.data() + node_idx * app_params.max_leaf_size;
+  return lnt_base_addr + node_idx * stored_max_leaf_size;
 }
 
 // For NN and KNN
@@ -67,9 +75,15 @@ std::array<Buffer, 2> buffers;
 std::array<ResultBuffer, 2> result_addr;
 
 void Init(const int batch_size) {
+  redwood::Init();
+
   for (int i = 0; i < 2; ++i) {
     buffers[i].Alloc(batch_size);
     result_addr[i].Alloc(batch_size);
+
+    redwood::AttachStream(i, buffers[i].u_leaf_idx);
+    redwood::AttachStream(i, buffers[i].u_qs);
+    redwood::AttachStream(i, result_addr[i].underlying_dat);
   }
 }
 
@@ -78,6 +92,8 @@ void Release() {
     buffers[i].DeAlloc();
     result_addr[i].DeAlloc();
   }
+
+  redwood::UsmFree(lnt_base_addr);
 }
 
 void ResetBuffer(const int tid, const int cur_stream) {
@@ -105,9 +121,7 @@ void DebugCpuReduction(const Buffer& buf, const dist::Euclidean functor,
     const auto node_addr = LntDataAddrAt(node_idx);
     const auto addr = reinterpret_cast<KnnSet*>(results.GetAddrAt(i));
 
-    for (int j = 0; j < app_params.max_leaf_size; ++j)
-
-    {
+    for (int j = 0; j < stored_max_leaf_size; ++j) {
       const float dist = functor(node_addr[j], q);
       addr->Insert(dist);
     }
@@ -115,12 +129,26 @@ void DebugCpuReduction(const Buffer& buf, const dist::Euclidean functor,
 }
 
 void LaunchAsyncWorkQueue(const int stream_id) {
-  std::cout << "rdc::LaunchAsyncWorkQueue " << stream_id << ", "
-            << buffers[stream_id].Size() << " actives." << std::endl;
+  // DebugCpuReduction(buffers[stream_id], dist::Euclidean(),
+  //                   result_addr[stream_id]);
 
-  DebugCpuReduction(buffers[stream_id], dist::Euclidean(),
-                    result_addr[stream_id]);
+  const auto num_active = buffers[stream_id].Size();
 
-  // You may reset the buffer?
+  if (kDebugMod) {
+    std::cout << "rdc::LaunchAsyncWorkQueue " << stream_id << ", "
+              << buffers[stream_id].Size() << " actives." << std::endl;
+
+    // 128? 256?
+  }
+
+  // if (num_active < 128) {
+  //   DebugCpuReduction(buffers[stream_id], dist::Euclidean(),
+  //                     result_addr[stream_id]);
+  // } else {
+  redwood::LaunchNnKenrnel(buffers[stream_id].u_leaf_idx,
+                           buffers[stream_id].u_qs, num_active,
+                           result_addr[stream_id].underlying_dat, lnt_base_addr,
+                           stored_max_leaf_size, stream_id);
+  // }
 }
 }  // namespace rdc

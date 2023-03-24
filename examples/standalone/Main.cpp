@@ -17,6 +17,7 @@
 #include "KDTree.hpp"
 #include "LoadFile.hpp"
 #include "ReducerHandler.hpp"
+#include "Redwood/Redwood.hpp"
 
 Point4F RandPoint() {
   return {
@@ -96,6 +97,7 @@ int main(int argc, char** argv) {
   for (int i = 0; i < app_params.m; ++i) q1_data.emplace(i, RandPoint());
   std::queue q2_data(q1_data);
 
+  // Init
   rdc::Init(app_params.batch_size);
 
   // Build tree
@@ -106,8 +108,8 @@ int main(int argc, char** argv) {
     const auto num_leaf_nodes = tree_ref->GetStats().num_leaf_nodes;
 
     // Basically alloc
-    rdc::lnt.resize(num_leaf_nodes * app_params.max_leaf_size);
-    tree_ref->LoadPayload(rdc::lnt.data());
+    auto lnt_addr = rdc::AllocateLnt(num_leaf_nodes, app_params.max_leaf_size);
+    tree_ref->LoadPayload(lnt_addr);
   }
 
   // Pure CPU traverse
@@ -121,10 +123,11 @@ int main(int argc, char** argv) {
     }
 
     // PrintLeafNodeVisited(leaf_node_visited1);
-    // PrintFinalResult(final_results1);
+    if constexpr (kDebugMod) {
+      PrintFinalResult(final_results1);
+      std::cout << std::endl;
+    }
   }
-
-  std::cout << std::endl;
 
   // Traverser traverse (double buffer)
   {
@@ -168,8 +171,7 @@ int main(int argc, char** argv) {
       // switch to next
       cur_stream = (cur_stream + 1) % num_streams;
 
-      // redwood::DeviceStreamSynchronize(cur_stream);
-
+      redwood::DeviceStreamSynchronize(cur_stream);
       rdc::ResetBuffer(tid, cur_stream);
     }
 
@@ -189,6 +191,7 @@ int main(int argc, char** argv) {
 
       const auto next = (cur_stream + 1) % num_streams;
       cur_stream = next;
+      redwood::DeviceStreamSynchronize(cur_stream);
       rdc::buffers[cur_stream].Reset();
 
       // Both stream must complete
@@ -197,44 +200,54 @@ int main(int argc, char** argv) {
     } while (need_work);
 
     // PrintLeafNodeVisited(leaf_node_visited2);
-    // PrintFinalResult(final_results2);
+    if constexpr (kDebugMod) {
+      PrintFinalResult(final_results2);
+    }
   }
 
-  // for (std::size_t i = 0; i < m; ++i)
-  //{
-  //	const auto& inner1 = leaf_node_visited1[i];
-  //	const auto& inner2 = leaf_node_visited2[i];
+  // for (std::size_t i = 0; i < app_params.m; ++i) {
+  //   const auto& inner1 = leaf_node_visited1[i];
+  //   const auto& inner2 = leaf_node_visited2[i];
 
-  //	std::cout << "Mismatched values in vector " << i << ":\n";
+  //   std::cout << "Mismatched values in vector " << i << ":\n";
 
-  //	for (std::size_t j = 0; j < inner1.size(); ++j)
-  //	{
-  //		if (j >= inner2.size() || inner1[j] != inner2[j])
-  //		{
-  //			std::cout << inner1[j] << '\n';
-  //		}
-  //	}
+  //   for (std::size_t j = 0; j < inner1.size(); ++j) {
+  //     if (j >= inner2.size() || inner1[j] != inner2[j]) {
+  //       std::cout << inner1[j] << '\n';
+  //     }
+  //   }
 
-  //	for (std::size_t j = inner1.size(); j < inner2.size(); ++j)
-  //	{
-  //		std::cout << inner2[j] << '\n';
-  //	}
+  //   for (std::size_t j = inner1.size(); j < inner2.size(); ++j) {
+  //     std::cout << inner2[j] << '\n';
+  //   }
 
-  //	std::cout << '\n';
-  //}
+  //   std::cout << '\n';
+  // }
 
   // Find the first mismatch between the two vectors
 
-  // Print the indices and values of the mismatched elements
-  if (const auto [fst, snd] = std::mismatch(
-          final_results1.begin(), final_results1.end(), final_results2.begin());
-      fst != final_results1.end()) {
-    const auto index = std::distance(final_results1.begin(), fst);
-    std::cout << "Mismatch at index " << index << ": " << *fst << " vs. "
-              << *snd << "\n";
-  } else {
-    std::cout << "Vectors are equal.\n";
+  auto areEqual = [](const float a, const float b) {
+    return std::abs(a - b) < 0.1f;
+  };
+
+  for (int i = 0; i < app_params.m; i++) {
+    if (!areEqual(final_results1[i], final_results2[i])) {
+      std::cout << "Mismatch found at index " << i << ": " << final_results1[i]
+                << " vs. " << final_results2[i] << std::endl;
+    }
   }
+
+  // // Print the indices and values of the mismatched elements
+  // if (const auto [fst, snd] = std::mismatch(
+  //         final_results1.begin(), final_results1.end(),
+  //         final_results2.begin());
+  //     fst != final_results1.end()) {
+  //   const auto index = std::distance(final_results1.begin(), fst);
+  //   std::cout << "Mismatch at index " << index << ": " << *fst << " vs. "
+  //             << *snd << "\n";
+  // } else {
+  //   std::cout << "Vectors are equal.\n";
+  // }
 
   rdc::Release();
   return 0;

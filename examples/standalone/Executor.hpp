@@ -71,7 +71,10 @@ class Executor {
       while (cur_ != nullptr) {
         if (cur_->IsLeaf()) {
           // **** Reduction at Leaf Node (replaced with Redwood API) ****
-          leaf_node_visited2[my_task_.first].push_back(cur_->uid);
+
+          if constexpr (kDebugMod) {
+            leaf_node_visited2[my_task_.first].push_back(cur_->uid);
+          }
 
           // Redwood ReduceLeaf
           rdc::ReduceLeafNode(my_stream_id_, my_task_, cur_->uid);
@@ -127,11 +130,13 @@ class Executor {
     constexpr dist::Euclidean functor;
 
     if (cur->IsLeaf()) {
-      leaf_node_visited1[my_task_.first].push_back(cur->uid);
+      if constexpr (kDebugMod) {
+        leaf_node_visited1[my_task_.first].push_back(cur->uid);
+      }
 
       // **** Reduction at leaf node ****
       const auto leaf_addr = rdc::LntDataAddrAt(cur->uid);
-      for (int i = 0; i < app_params.max_leaf_size; ++i) {
+      for (int i = 0; i < rdc::stored_max_leaf_size; ++i) {
         const float dist = functor(leaf_addr[i], my_task_.second);
         result_set->Insert(dist);
       }
@@ -165,9 +170,6 @@ class Executor {
  public:
   // Current processing task and its result (kSet)
   Task my_task_;
-
-  // KnnSet k_set_;
-
   union {
     float* my_assigned_result_addr;
     KnnSet* result_set = nullptr;

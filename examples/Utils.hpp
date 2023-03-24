@@ -25,6 +25,8 @@ void TimeTask(const std::string& task_name, Func&& f) {
             << "s. " << std::endl;
 }
 
+constexpr bool kDebugMod = false;
+
 #ifndef _HAS_NODISCARD
 #ifndef __has_cpp_attribute
 #define _HAS_NODISCARD 0
