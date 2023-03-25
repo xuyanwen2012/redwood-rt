@@ -54,7 +54,7 @@ void UsmFree(void* ptr) {
   }
 }
 
-// --------- Kernel related ---------
+// --------- CudaNn related ---------
 
 void LaunchNnKenrnel(const int* u_leaf_indices,  /**/
                      const Point4F* u_q_points,  /**/
@@ -62,17 +62,55 @@ void LaunchNnKenrnel(const int* u_leaf_indices,  /**/
                      float* u_out,               /* stream base addr */
                      const Point4F* u_lnt_data,  /**/
                      const int max_leaf_size, const int stream_id) {
-  // FindMinDistWarp6<<<1, 1024, 0, streams[stream_id]>>>(
+  const auto n_blocks = 1;
+  constexpr auto n_threads = 1024;
+  constexpr auto smem_size = 0;
+
+  // switch (max_leaf_size) {
+  //   case 1024:
+  //     CudaNn<1024><<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
+  //         u_leaf_indices, u_q_points, num_active_leafs, u_out, u_lnt_data,
+  //         max_leaf_size);
+  //     break;
+  //   case 512:
+  //     CudaNn<512><<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
+  //         u_leaf_indices, u_q_points, num_active_leafs, u_out, u_lnt_data,
+  //         max_leaf_size);
+  //     break;
+  //   case 256:
+  //     CudaNn<256><<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
+  //         u_leaf_indices, u_q_points, num_active_leafs, u_out, u_lnt_data,
+  //         max_leaf_size);
+  //     break;
+  //   case 128:
+  //     CudaNn<128><<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
+  //         u_leaf_indices, u_q_points, num_active_leafs, u_out, u_lnt_data,
+  //         max_leaf_size);
+  //     break;
+  //   case 64:
+  //     CudaNn<64><<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
+  //         u_leaf_indices, u_q_points, num_active_leafs, u_out, u_lnt_data,
+  //         max_leaf_size);
+  //     break;
+  //   case 32:
+  //     CudaNn<32><<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
+  //         u_leaf_indices, u_q_points, num_active_leafs, u_out, u_lnt_data,
+  //         max_leaf_size);
+  //     break;
+  //   default:
+  //     std::cout << "Should not happen." << std::endl;
+  //     exit(0);
+  // };
+
+  // CudaNnNaive<<<n_blocks, n_threads, 0, streams[stream_id]>>>(
   //     u_leaf_indices, u_q_points, num_active_leafs, u_out, u_lnt_data,
   //     max_leaf_size);
 
-  CudaNaive<<<1, 1024, 0, streams[stream_id]>>>(u_leaf_indices, u_q_points,
-                                                num_active_leafs, u_out,
-                                                u_lnt_data, max_leaf_size);
+  FindMinDistWarp6<<<n_blocks, n_threads, 0, streams[stream_id]>>>(
+      u_lnt_data, u_q_points, u_leaf_indices, u_out, num_active_leafs,
+      max_leaf_size
 
-  // CudaNnDebug<<<1, 1, 0, streams[stream_id]>>>(u_leaf_indices, u_q_points,
-  //  num_active_leafs, u_out,
-  //  u_lnt_data, max_leaf_size);
+  );
 }
 
 }  // namespace redwood

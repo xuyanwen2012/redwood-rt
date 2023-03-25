@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <queue>
@@ -57,7 +58,6 @@ int main(int argc, char** argv) {
     exit(EXIT_FAILURE);
   }
 
-  // Config
   const auto data_file = result["file"].as<std::string>();
   app_params.max_leaf_size = result["leaf"].as<int>();
   app_params.m = result["query"].as<int>();
@@ -72,30 +72,25 @@ int main(int argc, char** argv) {
 
   std::queue<Task> q1_data;
   for (int i = 0; i < app_params.m; ++i) q1_data.emplace(i, RandPoint());
-  std::queue q2_data(q1_data);
+  std::queue<Task> q2_data(q1_data);
 
-  // Debug Setting
-  leaf_node_visited1.resize(app_params.m);
-  leaf_node_visited2.resize(app_params.m);
+  // Build tree
+  const kdt::KdtParams params{app_params.max_leaf_size};
+  tree_ref = std::make_shared<kdt::KdTree>(params, in_data.data(), n);
+
+  const auto num_leaf_nodes = tree_ref->GetStats().num_leaf_nodes;
+  auto lnt_addr = rdc::AllocateLnt(num_leaf_nodes, app_params.max_leaf_size);
+  tree_ref->LoadPayload(lnt_addr);
+
+  // Debug Settings
   final_results1.resize(app_params.m);
   final_results2.resize(app_params.m);
 
   // Init
   rdc::Init(app_params.batch_size);
 
-  // Build tree
-  {
-    const kdt::KdtParams params{app_params.max_leaf_size};
-    tree_ref = std::make_shared<kdt::KdTree>(params, in_data.data(), n);
-
-    const auto num_leaf_nodes = tree_ref->GetStats().num_leaf_nodes;
-
-    auto lnt_addr = rdc::AllocateLnt(num_leaf_nodes, app_params.max_leaf_size);
-    tree_ref->LoadPayload(lnt_addr);
-  }
-
-  // Pure CPU traverse
-  if (app_params.cpu) {
+  TimeTask("CPU Traversal", [&] {
+    // Pure CPU traverse
     Executor cpu_exe{0, 0, 0};
 
     while (!q1_data.empty()) {
@@ -103,19 +98,12 @@ int main(int argc, char** argv) {
       cpu_exe.CpuTraverse();
       q1_data.pop();
     }
-
-    if constexpr (kDebugMod) {
-      PrintLeafNodeVisited(leaf_node_visited1, 32);
-      PrintFinalResult(final_results1, 32);
-      std::cout << std::endl;
-    }
-  }
-
-  // Traverser traverse (double buffer)
+  });
   {
-    constexpr auto tid = 0;
-
+    // Use Redwood
     constexpr auto num_streams = 2;
+
+    constexpr auto tid = 0;
 
     std::vector<Executor> exes[num_streams];
     for (int stream_id = 0; stream_id < num_streams; ++stream_id) {
@@ -125,77 +113,56 @@ int main(int argc, char** argv) {
       }
     }
 
-    auto cur_stream = 0;
-    while (!q2_data.empty()) {
-      for (auto it = exes[cur_stream].begin(); it != exes[cur_stream].end();) {
-        if (it->Finished()) {
-          if (!q2_data.empty()) {
-            const auto q = q2_data.front();
-            q2_data.pop();
+    // const auto t1 = std::chrono::high_resolution_clock::now();
+    // const auto time_span =
+    //     std::chrono::duration_cast<std::chrono::duration<float>>(t1 - t0);
 
-            it->SetQuery(q);
-            it->StartQuery();
-          }
+    // std::cout << "Finished " << task_name
+    //           << "! Time took: " << time_span.count() << "s. " << std::endl;
 
-          ++it;
-        } else {
-          it->Resume();
+    TimeTask("GPU Traversal", [&] {
+      auto cur_stream = 0;
+      while (!q2_data.empty()) {
+        for (auto it = exes[cur_stream].begin();
+             it != exes[cur_stream].end();) {
           if (it->Finished()) {
-            // Do not increment , let the same executor (it) take another task
-          } else {
+            if (!q2_data.empty()) {
+              const auto q = q2_data.front();
+              q2_data.pop();
+
+              it->SetQuery(q);
+              it->StartQuery();
+            }
+
             ++it;
+          } else {
+            it->Resume();
+            if (it->Finished()) {
+              // Do not increment , let the same executor (it) take another task
+            } else {
+              ++it;
+            }
           }
         }
+
+        rdc::LaunchAsyncWorkQueue(cur_stream);
+
+        // switch to next
+        cur_stream = (cur_stream + 1) % num_streams;
+
+        redwood::DeviceStreamSynchronize(cur_stream);
+        rdc::ResetBuffer(tid, cur_stream);
       }
 
-      rdc::LaunchAsyncWorkQueue(cur_stream);
+      redwood::DeviceSynchronize();
 
-      // switch to next
-      cur_stream = (cur_stream + 1) % num_streams;
-
-      redwood::DeviceStreamSynchronize(cur_stream);
-      rdc::ResetBuffer(tid, cur_stream);
-    }
-
-    redwood::DeviceSynchronize();
-
-    for (int i = 0; i < num_streams; ++i) {
-      for (auto& ex : exes[cur_stream]) {
-        if constexpr (kDebugMod) {
-          leaf_node_visited2[ex.my_task_.first].clear();
+      for (int i = 0; i < num_streams; ++i) {
+        for (auto& ex : exes[cur_stream]) {
+          ex.CpuTraverse2();
         }
-        ex.CpuTraverse2();
+        cur_stream = (cur_stream + 1) % num_streams;
       }
-      cur_stream = (cur_stream + 1) % num_streams;
-    }
-
-    if constexpr (kDebugMod) {
-      PrintLeafNodeVisited(leaf_node_visited2, 32);
-      PrintFinalResult(final_results2, 32);
-    }
-  }
-
-  // Verify Results
-
-  if constexpr (kDebugMod) {
-    for (std::size_t i = 0; i < app_params.m; ++i) {
-      const auto& inner1 = leaf_node_visited1[i];
-      const auto& inner2 = leaf_node_visited2[i];
-
-      std::cout << "Mismatched values in vector " << i << ":\n";
-
-      for (std::size_t j = 0; j < inner1.size(); ++j) {
-        if (j >= inner2.size() || inner1[j] != inner2[j]) {
-          std::cout << inner1[j] << '\n';
-        }
-      }
-
-      for (std::size_t j = inner1.size(); j < inner2.size(); ++j) {
-        std::cout << inner2[j] << '\n';
-      }
-
-      std::cout << '\n';
-    }
+    });
   }
 
   const auto are_equal = [](const float a, const float b) {

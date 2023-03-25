@@ -30,40 +30,12 @@ inline __device__ float KernelFuncKnn(const Point4F& p, const Point4F& q) {
 }
 
 // Debug Kernels are used to check if results are correct.
-__global__ void CudaNnDebug(const int* u_leaf_indices, /**/
+__global__ void CudaNnNaive(const int* u_leaf_indices, /**/
                             const Point4F* u_q_points, /**/
                             const int num_active,      /**/
                             float* u_outs,             /* */
                             const Point4F* u_lnt_data, /**/
                             const int max_leaf_size) {
-  auto cta = cg::this_thread_block();
-  const auto tid = cta.thread_rank();
-
-  if (tid == 0) {
-    for (int i = 0; i < num_active; ++i) {
-      const auto leaf_id_to_load = u_leaf_indices[i];
-      const auto q = u_q_points[i];
-      auto my_min = std::numeric_limits<float>::max();
-
-      for (int j = 0; j < max_leaf_size; ++j) {
-        const auto p = u_lnt_data[leaf_id_to_load * max_leaf_size + j];
-        const auto dist = KernelFuncKnn(p, q);
-        my_min = min(my_min, dist);
-      }
-
-      // outs[i] = my_min;
-      u_outs[i] = min(u_outs[i], my_min);
-    }
-  }
-}
-
-// Debug Kernels are used to check if results are correct.
-__global__ void CudaNaive(const int* u_leaf_indices, /**/
-                          const Point4F* u_q_points, /**/
-                          const int num_active,      /**/
-                          float* u_outs,             /* */
-                          const Point4F* u_lnt_data, /**/
-                          const int max_leaf_size) {
   auto cta = cg::this_thread_block();
   const auto tid = cta.thread_rank();
 
@@ -82,49 +54,115 @@ __global__ void CudaNaive(const int* u_leaf_indices, /**/
   }
 }
 
-// Parallel *Min* Reduction for Leafs
-// template <int LeafSize>
-__global__ void FindMinDistWarp6(
-    const int* u_leaf_indices,  /* batch_size */
-    const Point4F* u_q_points,  /* batch_size */
-    const int num_active_leafs, /* how many collected */
-    float* outs,                /* batch_size */
-    const Point4F* u_lnt_data,  /**/
-    const int max_leaf_size) {
+template <int LeafSize>
+__global__ void CudaNn(const int* u_leaf_indices, /**/
+                       const Point4F* u_q_points, /**/
+                       const int num_active,      /**/
+                       float* u_outs,             /* */
+                       const Point4F* u_lnt_data, /**/
+                       const int max_leaf_size) {
+  constexpr int warp_threads = 32;
+  constexpr int block_threads = 1024;
+  constexpr int leaf_size_i_want = LeafSize;
+
+  // leaf 256 => 8 per thread
+  // ...
+  // leaf 64 => 2 per thread
+  // leaf 32 => 1 per thread
+  constexpr int items_per_thread = leaf_size_i_want / warp_threads;
+  constexpr int warps_in_block = block_threads / warp_threads;
+
+  using WarpLoad = cub::WarpLoad<Point4F, items_per_thread,
+                                 cub::WARP_LOAD_STRIPED, warp_threads>;
+
   using WarpReduce = cub::WarpReduce<float>;
 
-  __shared__ typename WarpReduce::TempStorage temp_storage[32];
+  __shared__ union {
+    typename WarpLoad::TempStorage load[warps_in_block];
+    typename WarpReduce::TempStorage reduce[warps_in_block];
+  } temp_storage;
+
+  auto cta = cg::this_thread_block();
+  const auto tid = cta.thread_rank();
+
+  if (tid >= num_active) return;
+
+  const auto how_many_times_loop = num_active / warp_threads;
+  // const int warp_id = static_cast<int>(threadIdx.x) / warp_threads;
+  const int warp_id = tid / warp_threads;
+  const int id_in_warp = tid % warp_threads;
+
+  Point4F thread_data[items_per_thread];
+  // float thread_value[items_per_thread];
+  float thread_value;
+
+  int it = 0;
+  for (; it < how_many_times_loop; ++it) {
+    // 'offset' means the index in buffer
+    const auto offset = it * warp_threads + warp_id;
+    const auto my_leaf_id_to_load = u_leaf_indices[offset];
+    const auto q = u_q_points[offset];
+
+    // Load entire leaf node at location (given 'leaf_id_to_load')
+    WarpLoad(temp_storage.load[warp_id])
+        .Load(u_lnt_data + my_leaf_id_to_load * leaf_size_i_want, thread_data);
+
+    float my_min = 9999999999999.9f;
+    for (int i = 0; i < items_per_thread; ++i) {
+      thread_value = KernelFuncKnn(thread_data[i], q);
+      thread_value = WarpReduce(temp_storage.reduce[warp_id])
+                         .Reduce(thread_value, cub::Min());
+      my_min = min(my_min, thread_value);
+    }
+
+    if (id_in_warp == 0) {
+      u_outs[offset] = min(u_outs[offset], my_min);
+    }
+  }
+}
+
+__global__ void FindMinDistWarp6(const Point4F* lnt, const Point4F* u_q,
+                                 const int* u_node_idx, float* u_out,
+                                 const int num_active,
+                                 const int max_leaf_size) {
+  using WarpReduce = cub::WarpReduce<float>;
+
+  __shared__ WarpReduce::TempStorage temp_storage[32];
   __shared__ float local_results[1024];
   __shared__ float leaf_node_results[1024];
 
   auto cta = cg::this_thread_block();
   auto tid = cta.thread_rank();
-
-  constexpr auto warp_size = 32;
+  constexpr auto warp_size = 32u;
 
   int warp_id = tid / 32;
   int lane_id = tid % 32;
   auto warp = cg::tiled_partition<warp_size>(cta);
 
-  // TODO: numeric max
-  leaf_node_results[tid] = 1234.1234f;
-  for (int ln = warp_id; ln < num_active_leafs; ln += 32) {
+  leaf_node_results[tid] = std::numeric_limits<float>::max();
+  int cached_query_idx;
+  for (int ln = warp_id; ln < num_active; ln += 32) {
     int ln_id = ln / 32;
 
-    // TODO: numeric max
-    local_results[tid] = 9999999.999f;
-    const auto leaf_node_uid = u_leaf_indices[ln];
-    const auto q = u_q_points[ln];
+    local_results[tid] = std::numeric_limits<float>::max();
+    const auto leaf_node_uid = u_node_idx[ln];
+    // const auto query_idx = u_batch_query_idx[ln].x;
+    const auto query_data = u_q[ln];
+
+    if (ln_id == lane_id) {
+      cached_query_idx = ln;
+    }
 
     for (int group = 0; group < max_leaf_size; group += 32) {
       const int group_id = group / 32;
 
       // kernel function
       const auto dist = KernelFuncKnn(
-          u_lnt_data[leaf_node_uid * max_leaf_size + group + lane_id], q);
+          lnt[leaf_node_uid * max_leaf_size + group + lane_id], query_data);
 
       auto my_min = WarpReduce(temp_storage[warp_id]).Reduce(dist, cub::Min());
       my_min = warp.shfl(my_min, 0);
+
       if (group_id == lane_id) {
         local_results[tid] = my_min;
       }
@@ -137,6 +175,6 @@ __global__ void FindMinDistWarp6(
     }
   }
 
-  const auto to_store = leaf_node_results[tid];
-  outs[tid] = min(outs[tid], to_store);
+  auto to_store = leaf_node_results[tid];
+  u_out[cached_query_idx] = min(u_out[cached_query_idx], to_store);
 }

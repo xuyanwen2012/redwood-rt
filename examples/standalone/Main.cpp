@@ -31,21 +31,6 @@ _NODISCARD Point4F RandPoint() {
   };
 }
 
-void VerifyResult() {
-  const auto are_equal = [](const float a, const float b) {
-    return std::abs(a - b) < std::numeric_limits<float>::epsilon();
-  };
-
-  for (int i = 0; i < app_params.m; i++) {
-    if (!are_equal(final_results1[i], final_results2[i])) {
-      std::cout << "Mismatch found at index " << i << ": " << final_results1[i]
-                << " vs. " << final_results2[i] << std::endl;
-    }
-  }
-
-  std::cout << "Results verified" << std::endl;
-}
-
 int main(int argc, char** argv) {
   cxxopts::Options options("Nearest Neighbor (NN)",
                            "Redwood NN demo implementation");
@@ -88,13 +73,6 @@ int main(int argc, char** argv) {
   std::queue<Task> q_data;
   for (int i = 0; i < app_params.m; ++i) q_data.emplace(i, RandPoint());
 
-  // Debug Setting
-  final_results1.resize(app_params.m);
-  final_results2.resize(app_params.m);
-
-  // Init
-  rdc::Init(app_params.batch_size);
-
   // Build tree
   const kdt::KdtParams params{app_params.max_leaf_size};
   tree_ref = std::make_shared<kdt::KdTree>(params, in_data.data(), n);
@@ -103,20 +81,29 @@ int main(int argc, char** argv) {
   auto lnt_addr = rdc::AllocateLnt(num_leaf_nodes, app_params.max_leaf_size);
   tree_ref->LoadPayload(lnt_addr);
 
+  // Debug Settings
+  final_results1.resize(app_params.m);
+  final_results2.resize(app_params.m);
+
+  // Init
+  rdc::Init(app_params.batch_size);
+
   if (app_params.cpu) {
-    // Pure CPU traverse
-    Executor cpu_exe{0, 0, 0};
+    TimeTask("CPU Traversal", [&] {
+      // Pure CPU traverse
+      Executor cpu_exe{0, 0, 0};
 
-    while (!q_data.empty()) {
-      cpu_exe.SetQuery(q_data.front());
-      cpu_exe.CpuTraverse();
-      q_data.pop();
-    }
-
+      while (!q_data.empty()) {
+        cpu_exe.SetQuery(q_data.front());
+        cpu_exe.CpuTraverse();
+        q_data.pop();
+      }
+    });
   } else {
     // Use Redwood
-    constexpr auto tid = 0;
     constexpr auto num_streams = 2;
+
+    constexpr auto tid = 0;
 
     std::vector<Executor> exes[num_streams];
     for (int stream_id = 0; stream_id < num_streams; ++stream_id) {
@@ -125,6 +112,8 @@ int main(int argc, char** argv) {
         exes[stream_id].emplace_back(tid, stream_id, i);
       }
     }
+
+    const auto t0 = std::chrono::high_resolution_clock::now();
 
     auto cur_stream = 0;
     while (!q_data.empty()) {
@@ -160,15 +149,24 @@ int main(int argc, char** argv) {
 
     redwood::DeviceSynchronize();
 
+    const auto t1 = std::chrono::high_resolution_clock::now();
+
     for (int i = 0; i < num_streams; ++i) {
       for (auto& ex : exes[cur_stream]) {
         ex.CpuTraverse2();
       }
       cur_stream = (cur_stream + 1) % num_streams;
     }
-  }
 
-  VerifyResult();
+    const auto t2 = std::chrono::high_resolution_clock::now();
+    const auto time_span1 =
+        std::chrono::duration_cast<std::chrono::duration<float>>(t1 - t0);
+    const auto time_span2 =
+        std::chrono::duration_cast<std::chrono::duration<float>>(t2 - t0);
+    std::cout << "Finished "
+              << "! Time took: " << time_span1.count() << "s. "
+              << time_span2.count() << "s. " << std::endl;
+  }
 
   rdc::Release();
   return EXIT_SUCCESS;

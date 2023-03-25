@@ -7,24 +7,21 @@ INCLUDES += -I../../accelerator/cuda/extern/cub-1.17.2/ -I../../accelerator/cuda
 
 ARCH = -arch=sm_53
 
-cpu: Main.o libcpu.a
-	$(CXX) Main.o libcpu.a -o cpu.out
+debug: MainDebug.o libcuda.a
+	$(CXX) MainDebug.o libcuda.a -L/usr/local/cuda/lib64 -lcudart -o cuda.out
 
 cuda: Main.o libcuda.a
 	$(CXX) Main.o libcuda.a -L/usr/local/cuda/lib64 -lcudart -o cuda.out
 
+MainDebug.o: MainDebug.cpp
+	$(CXX) $(CXXFLAGS) -c MainDebug.cpp -o MainDebug.o
+
 Main.o: Main.cpp
 	$(CXX) $(CXXFLAGS) -c Main.cpp -o Main.o
-
-cpu.o: Redwood/Cpu.cpp
-	$(CXX) $(CXXFLAGS) -c  Redwood/Cpu.cpp -o cpu.o
 
 cuda.o: Redwood/Cuda.cu
 	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $(ARCH) -c ./Redwood/Cuda.cu -o cuda.o
 	
-libcpu.a: cpu.o
-	ar rcs libcpu.a cpu.o
-
 libcuda.a: cuda.o
 	ar rcs libcuda.a cuda.o
 
