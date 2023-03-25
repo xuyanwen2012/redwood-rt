@@ -29,6 +29,17 @@ inline __device__ float KernelFuncKnn(const Point4F& p, const Point4F& q) {
   return sqrtf(dist);
 }
 
+inline __device__ float KernelFuncBh(const Point4F p, const Point4F q) {
+  const auto dx = p.data[0] - q.data[0];
+  const auto dy = p.data[1] - q.data[1];
+  const auto dz = p.data[2] - q.data[2];
+  const auto dist_sqr = dx * dx + dy * dy + dz * dz + 1e-9f;
+  const auto inv_dist = rsqrtf(dist_sqr);
+  const auto inv_dist3 = inv_dist * inv_dist * inv_dist;
+  const auto with_mass = inv_dist3 * p.data[3];
+  return dx * with_mass + dy * with_mass + dz * with_mass;
+}
+
 // Debug Kernels are used to check if results are correct.
 __global__ void CudaNnNaive(const int* u_leaf_indices, /**/
                             const Point4F* u_q_points, /**/
@@ -146,7 +157,6 @@ __global__ void FindMinDistWarp6(const Point4F* lnt, const Point4F* u_q,
 
     local_results[tid] = std::numeric_limits<float>::max();
     const auto leaf_node_uid = u_node_idx[ln];
-    // const auto query_idx = u_batch_query_idx[ln].x;
     const auto query_data = u_q[ln];
 
     if (ln_id == lane_id) {
