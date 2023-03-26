@@ -9,7 +9,7 @@
 
 using Task = std::pair<int, Point4F>;
 
-#include "Redwood/Kernels.hpp"
+#include "Redwood/Kernel.hpp"
 #include "Redwood/Redwood.hpp"
 
 namespace rdc {

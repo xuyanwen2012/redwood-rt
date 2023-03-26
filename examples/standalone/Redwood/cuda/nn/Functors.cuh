@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../Point.hpp"
+#include "../../Point.hpp"
 
 namespace dist_cuda {
 struct Euclidean {
@@ -30,4 +30,5 @@ struct Chebyshev {
     return fmaxf(fmaxf(fmaxf(dx, dy), dz), dw);
   }
 };
+
 }  // namespace dist_cuda

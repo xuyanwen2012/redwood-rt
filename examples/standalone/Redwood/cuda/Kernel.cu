@@ -1,9 +1,9 @@
 #include <iostream>
 
-#include "../Kernels.hpp"
+#include "../Kernel.hpp"
 #include "../Point.hpp"
 #include "CudaUtils.cuh"
-#include "UserKernels.cuh"
+#include "nn/Reductions.cuh"
 
 namespace redwood {
 
@@ -18,9 +18,12 @@ void LaunchNnKenrnel(const int* u_leaf_indices,  /**/
   const auto n_blocks = 1;
   constexpr auto n_threads = 1024;
   constexpr auto smem_size = 0;
+
+  const dist_cuda::Euclidean functor;
+
   FindMinDistWarp6<<<n_blocks, n_threads, smem_size, streams[stream_id]>>>(
       u_lnt_data, u_q_points, u_leaf_indices, u_out, num_active_leafs,
-      max_leaf_size);
+      max_leaf_size, functor);
 }
 
 }  // namespace redwood
