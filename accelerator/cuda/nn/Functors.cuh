@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../Point.hpp"
+#include "Redwood/Point.hpp"
 
 namespace dist_cuda {
 struct Euclidean {

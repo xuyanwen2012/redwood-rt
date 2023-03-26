@@ -117,7 +117,7 @@ inline void DebugCpuReduction(const Buffer& buf, const dist::Euclidean functor,
     const auto q = buf.u_qs[i];
 
     const auto node_addr = LntDataAddrAt(node_idx);
-    const auto addr = reinterpret_cast<KnnSet*>(results.GetAddrAt(i));
+    const auto addr = reinterpret_cast<KnnSet<float, 1>*>(results.GetAddrAt(i));
 
     for (int j = 0; j < stored_max_leaf_size; ++j) {
       const float dist = functor(node_addr[j], q);

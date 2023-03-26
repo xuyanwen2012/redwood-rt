@@ -4,7 +4,8 @@
 
 namespace dist_cuda {
 
-inline __host__ __device__ float dist_sqr(const Point4F p, const Point4F q) {
+__host__ __device__ __forceinline__ float dist_sqr(const Point4F p,
+                                                   const Point4F q) {
   const auto dx = p.data[0] - q.data[0];
   const auto dy = p.data[1] - q.data[1];
   const auto dz = p.data[2] - q.data[2];

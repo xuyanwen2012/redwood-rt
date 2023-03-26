@@ -1,8 +1,8 @@
 #include <iostream>
 
-#include "../Kernel.hpp"
-#include "../Point.hpp"
 #include "CudaUtils.cuh"
+#include "Redwood/Kernel.hpp"
+#include "Redwood/Point.hpp"
 #include "nn/Reductions.cuh"
 
 namespace redwood {

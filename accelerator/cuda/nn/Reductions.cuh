@@ -6,8 +6,8 @@
 #include <cub/cub.cuh>
 #include <limits>
 
-#include "../../Point.hpp"
 #include "Functors.cuh"
+#include "Redwood/Point.hpp"
 
 namespace cg = cooperative_groups;
 

@@ -222,7 +222,7 @@ class Executor {
 
   union {
     float* my_assigned_result_addr;
-    KnnSet* result_set = nullptr;
+    KnnSet<float, 1>* result_set = nullptr;
   };
 
   // Couroutine related

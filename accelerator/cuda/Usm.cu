@@ -1,7 +1,7 @@
 #include <iostream>
 
-#include "../Usm.hpp"
 #include "CudaUtils.cuh"
+#include "Redwood/Usm.hpp"
 
 namespace redwood {
 
