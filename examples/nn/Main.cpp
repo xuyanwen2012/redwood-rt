@@ -1,209 +1,35 @@
 #include <algorithm>
-#include <array>
+#include <cassert>
+#include <cmath>
+#include <cstddef>
 #include <cstdlib>
-#include <iterator>
+#include <iostream>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <queue>
+#include <random>
 #include <vector>
 
 #include "../LoadFile.hpp"
 #include "../Utils.hpp"
 #include "../cxxopts.hpp"
-#include "../knn/KDTree.hpp"
-#include "../knn/Kernel.hpp"
-#include "../knn/KnnSet.hpp"
 #include "AppParams.hpp"
+#include "DistanceMetrics.hpp"
+#include "Executor.hpp"
+#include "GlobalVars.hpp"
+#include "KDTree.hpp"
 #include "ReducerHandler.hpp"
-#include "Redwood/Core.hpp"
-#include "Redwood/Point.hpp"
+#include "Redwood.hpp"
 
-inline std::shared_ptr<kdt::KdTree> tree_ref;
-
-enum class ExecutionState { kWorking, kFinished };
-
-struct CallStackField {
-  kdt::Node* current;
-  int axis;
-  float train;
-  kdt::Dir dir;
-};
-
-// Knn Algorithm
-class Executor {
- public:
-  // Executor() = delete;
-
-  // Thread id, i.e., [0, .., n_threads]
-  // Stream id in the thread, i.e., [0, 1]
-  // My id in the group executor, i.e., [0,...,1023]
-  Executor(const int tid, const int stream_id, const int my_id)
-      : state_(ExecutionState::kFinished),
-        my_tid_(tid),
-        my_stream_id_(stream_id),
-        debug_uid_(my_id) {
-    // values need experiment
-    stack_.reserve(16);
-
-    // When created,
-    float* base_addr = rdc::GetResultAddr<float>(my_tid_, my_stream_id_);
-    u_my_result_addr_ = base_addr + my_id;
-  }
-
-  _NODISCARD bool Finished() const {
-    return state_ == ExecutionState::kFinished;
-  }
-
-  void SetQuery(const Point4F& q) { my_query_point_ = q; }
-
-  void StartQuery() {
-    stack_.clear();
-    k_set_->Clear();
-    cur_ = nullptr;
-    Execute();
-  }
-
-  void Resume() { Execute(); }
-
-  void CPUTraverse() {
-    k_set_->Clear();
-    TraversalRecursive(tree_ref->root_);
-  }
-
- protected:
-  void Execute() {
-    if (state_ == ExecutionState::kWorking) goto my_resume_point;
-    state_ = ExecutionState::kWorking;
-    cur_ = tree_ref->root_;
-
-    // Begin Iteration
-    while (cur_ != nullptr || !stack_.empty()) {
-      // Traverse all the way to left most leaf node
-      while (cur_ != nullptr) {
-        if (cur_->IsLeaf()) {
-          //
-          // **** Reduction at Leaf Node (replaced with Redwood API) ****
-          rdc::ReduceLeafNode(my_tid_, my_stream_id_, cur_->uid,
-                              my_query_point_);
-          // ****************************
-
-          // **** Coroutine Reuturn (API) ****
-          return;
-        my_resume_point:
-          // ****************************
-
-          cur_ = nullptr;
-          continue;
-        }
-
-        // **** Reduction at tree node ****
-        const unsigned accessor_idx =
-            tree_ref->v_acc_[cur_->node_type.tree.idx_mid];
-
-        const float dist =
-            KernelFunc(tree_ref->in_data_ref_[accessor_idx], my_query_point_);
-
-        k_set_->Insert(dist);
-
-        // **********************************
-
-        const int axis = cur_->node_type.tree.axis;
-        const float train = tree_ref->in_data_ref_[accessor_idx].data[axis];
-        const kdt::Dir dir = my_query_point_.data[axis] < train
-                                 ? kdt::Dir::kLeft
-                                 : kdt::Dir::kRight;
-
-        stack_.push_back({cur_, axis, train, dir});
-        cur_ = cur_->GetChild(dir);
-      }
-
-      // We resume back from Break point, and now we are still in the branch
-      // node, we can check if there's any thing left on the stack.
-      if (!stack_.empty()) {
-        const auto [last_cur, axis, train, dir] = stack_.back();
-        stack_.pop_back();
-
-        // Check if there is a possibility of the NN lies on the other half
-        // If the difference between the query point and the other splitting
-        // plane is greater than the current found minimum distance, then it
-        // is impossible to have a NN there.
-
-        Point4F a{};
-        Point4F b{};
-        a.data[axis] = my_query_point_.data[axis];
-        b.data[axis] = train;
-        const auto diff = KernelFunc(a, b);
-        if (diff < k_set_->WorstDist()) {
-          cur_ = last_cur->GetChild(FlipDir(dir));
-        }
-      }
-    }
-
-    // Done traversals
-    state_ = ExecutionState::kFinished;
-  }
-
-  void TraversalRecursive(const kdt::Node* cur) {
-    if (cur->IsLeaf()) {
-      const auto leaf_addr = rdc::LntDataAddrAt(cur->uid);
-      for (int i = 0; i < tree_ref->GetParams().leaf_max_size; ++i) {
-        const float dist = KernelFunc(leaf_addr[i], my_query_point_);
-        k_set_->Insert(dist);
-      }
-
-    } else {
-      // **** Reduction at tree node ****
-      const unsigned accessor_idx =
-          tree_ref->v_acc_[cur->node_type.tree.idx_mid];
-      const float dist =
-          KernelFunc(tree_ref->in_data_ref_[accessor_idx], my_query_point_);
-      k_set_->Insert(dist);
-
-      // **********************************
-
-      const auto axis = cur->node_type.tree.axis;
-      const auto train = tree_ref->in_data_ref_[accessor_idx].data[axis];
-      const auto dir = my_query_point_.data[axis] < train ? kdt::Dir::kLeft
-                                                          : kdt::Dir::kRight;
-
-      TraversalRecursive(cur->GetChild(dir));
-
-      Point4F a{};
-      Point4F b{};
-      a.data[axis] = my_query_point_.data[axis];
-      b.data[axis] = train;
-      const auto diff = KernelFunc(a, b);
-      if (diff < k_set_->WorstDist()) {
-        TraversalRecursive(cur->GetChild(FlipDir(dir)));
-      }
-    }
-  }
-
- public:
-  Point4F my_query_point_;
-
-  // this should point to USM region, unique to each executor.
-  // If k = 32,
-  // Each address is 128 bytes (or 16 eight-byte words) apart.
- public:
-  // Pointer to the USM address requested from the Backend.
-  union {
-    KnnSet<float, 1>* k_set_;
-    float* u_my_result_addr_;
+_NODISCARD Point4F RandPoint() {
+  return {
+      MyRand(0, 1024),
+      MyRand(0, 1024),
+      MyRand(0, 1024),
+      MyRand(0, 1024),
   };
-
-  // Couroutine related
-  std::vector<CallStackField> stack_;
-  kdt::Node* cur_;
-  ExecutionState state_;
-
-  // Store some reference used
-  int my_tid_;
-  int my_stream_id_;
-
- public:
-  int debug_uid_;
-};
+}
 
 int main(int argc, char** argv) {
   cxxopts::Options options("Nearest Neighbor (NN)",
@@ -234,215 +60,114 @@ int main(int argc, char** argv) {
 
   const auto data_file = result["file"].as<std::string>();
   app_params.max_leaf_size = result["leaf"].as<int>();
+  app_params.m = result["query"].as<int>();
   app_params.batch_size = result["batch_size"].as<int>();
   app_params.num_threads = result["thread"].as<int>();
-  app_params.m = result["query"].as<int>();
   app_params.cpu = result["cpu"].as<bool>();
-
-  // Load file
-  const auto [in, n] = mmap_file<Point4F>(data_file);
-
   std::cout << app_params << std::endl;
 
-  // Inspect input data is correct
-  for (int i = 0; i < 10; ++i) {
-    std::cout << in[i] << std::endl;
-  }
+  // Load/Prepare Data
+  const auto in_data = load_data_from_file<Point4F>(data_file);
+  const auto n = in_data.size();
 
-  std::cout << "Building Tree..." << std::endl;
+  std::queue<Task> q_data;
+  for (int i = 0; i < app_params.m; ++i) q_data.emplace(i, RandPoint());
+
+  // Build tree
   const kdt::KdtParams params{app_params.max_leaf_size};
-  auto tree = std::make_shared<kdt::KdTree>(params, in, n);
-  tree_ref = tree;
+  tree_ref = std::make_shared<kdt::KdTree>(params, in_data.data(), n);
 
-  std::cout << "Loading USM leaf node data..." << std::endl;
-  rdc::InitReducers();
+  const auto num_leaf_nodes = tree_ref->GetStats().num_leaf_nodes;
+  auto lnt_addr = rdc::AllocateLnt(num_leaf_nodes, app_params.max_leaf_size);
+  tree_ref->LoadPayload(lnt_addr);
 
-  // Now octree tree is comstructed, need to move leaf node data into USM
-  const auto num_leaf_nodes = tree->GetStats().num_leaf_nodes;
-  rdc::AllocateLeafNodeTable(num_leaf_nodes, app_params.max_leaf_size, false);
-  tree->LoadPayload(rdc::LntDataAddr());
+  // Debug Settings
+  final_results1.resize(app_params.m);
+  final_results2.resize(app_params.m);
 
-  // TODO: figure out a better way, not important right now
-  // munmap_file(in, n);
+  // Init
+  rdc::Init(app_params.batch_size);
 
-  std::cout << "Making tasks..." << std::endl;
+  if (app_params.cpu) {
+    TimeTask("CPU Traversal", [&] {
+      // Pure CPU traverse
+      Executor cpu_exe{0, 0, 0};
 
-  static auto rand_point4f = []() {
-    // return Point4F{MyRand(0.0f, 100.0f), MyRand(0.0f, 100.0f),
-    //  MyRand(0.0f, 100.0f), MyRand(0.0f, 100.0f)};
-    return Point4F{MyRand(0.0f, 1000.0f), MyRand(0.0f, 1000.0f),
-                   MyRand(0.0f, 1000.0f), MyRand(0.0f, 1000.0f)};
-  };
-
-  std::queue<Point4F> q_data;
-  // for (int i = 0; i < app_params.m; ++i) q_data.push(rand_point4f());
-
-  for (int i = 0; i < app_params.m; ++i) {
-    auto q = rand_point4f();
-    q.data[0] = i;
-    q_data.push(q);
-  }
-
-  std::cout << "Start Traversal " << std::endl;
-
-  constexpr int tid = 0;
-
-  std::vector<std::pair<Point4F, float>> final_results;
-  // std::vector<float> final_results;
-  final_results.reserve(app_params.m);
-
-  const auto sequential_traversal = [&] {
-    Executor exe{tid, 0, 0};
-    while (!q_data.empty()) {
-      const auto q = q_data.front();
-      q_data.pop();
-      exe.SetQuery(q);
-      exe.CPUTraverse();
-      final_results.emplace_back(q, exe.k_set_->WorstDist());
-    }
-  };
-
-  const auto single_buffer_traversal = [&] {
-    // Use redwood runtime
-    std::vector<Executor> exes;
-    exes.reserve(app_params.batch_size);
-    for (int i = 0; i < app_params.batch_size; ++i)
-      exes.emplace_back(tid, 0, i);
-
-    for (auto& exe : exes) {
-      if (q_data.empty()) break;
-      const auto q = q_data.front();
-      q_data.pop();
-      exe.SetQuery(q);
-      exe.StartQuery();
-    }
-
-    rdc::LuanchKernelAsync(tid, 0);
-    redwood::DeviceStreamSynchronize(0);
-    rdc::ClearBuffer(tid, 0);
-
-    while (!q_data.empty()) {
-      // 1k executors
-      for (auto& exe : exes) {
-        if (exe.Finished()) {
-          final_results.emplace_back(exe.my_query_point_,
-                                     exe.k_set_->WorstDist());
-
-          // Make there is task in the queue
-          if (!q_data.empty()) {
-            const auto q = q_data.front();
-            q_data.pop();
-            exe.SetQuery(q);
-            exe.StartQuery();
-          }
-
-        } else {
-          exe.Resume();
-        }
+      while (!q_data.empty()) {
+        cpu_exe.SetQuery(q_data.front());
+        cpu_exe.CpuTraverse();
+        q_data.pop();
       }
+    });
+  } else {
+    // Use Redwood
+    constexpr auto num_streams = 2;
 
-      rdc::LuanchKernelAsync(tid, 0);
-      redwood::DeviceStreamSynchronize(0);
-      rdc::ClearBuffer(tid, 0);
-    }
-  };
+    constexpr auto tid = 0;
 
-  const auto double_buffer_traversal = [&] {
-    // Use redwood runtime
-    std::vector<Executor> exes[rdc::kNumStreams];
-    for (int stream_id = 0; stream_id < rdc::kNumStreams; ++stream_id) {
+    std::vector<Executor> exes[num_streams];
+    for (int stream_id = 0; stream_id < num_streams; ++stream_id) {
       exes[stream_id].reserve(app_params.batch_size);
       for (int i = 0; i < app_params.batch_size; ++i) {
         exes[stream_id].emplace_back(tid, stream_id, i);
       }
     }
 
-    if constexpr (false) {
-      for (int stream_id = 0; stream_id < rdc::kNumStreams; ++stream_id)
-        for (auto& exe : exes[stream_id])
-          std::cout << exe.my_tid_ << "-" << exe.my_stream_id_ << "-"
-                    << exe.debug_uid_ << "\t" << exe.u_my_result_addr_
-                    << std::endl;
-    }
+    const auto t0 = std::chrono::high_resolution_clock::now();
 
-    // During the initial iteration, we can assume they are all finished
-    // Batch A, first pass
-    for (auto& exe : exes[0]) {
-      if (q_data.empty()) break;
-      const auto q = q_data.front();
-      q_data.pop();
-      exe.SetQuery(q);
-      exe.StartQuery();
-    }
-    rdc::LuanchKernelAsync(tid, 0);
-
-    // Batch B, first pass
-    for (auto& exe : exes[1]) {
-      if (q_data.empty()) break;
-      const auto q = q_data.front();
-      q_data.pop();
-      exe.SetQuery(q);
-      exe.StartQuery();
-    }
-    rdc::LuanchKernelAsync(tid, 1);
-
-    redwood::DeviceStreamSynchronize(0);
-    rdc::ClearBuffer(tid, 0);
-
-    // Batch A or B, alternating
     auto cur_stream = 0;
     while (!q_data.empty()) {
-      for (auto& exe : exes[cur_stream]) {
-        if (exe.Finished()) {
-          final_results.emplace_back(exe.my_query_point_,
-                                     exe.k_set_->WorstDist());
-
+      for (auto it = exes[cur_stream].begin(); it != exes[cur_stream].end();) {
+        if (it->Finished()) {
           if (!q_data.empty()) {
             const auto q = q_data.front();
             q_data.pop();
-            exe.SetQuery(q);
-            exe.StartQuery();
+
+            it->SetQuery(q);
+            it->StartQuery();
           }
 
+          ++it;
         } else {
-          exe.Resume();
+          it->Resume();
+          if (it->Finished()) {
+            // Do not increment , let the same executor (it) take another task
+          } else {
+            ++it;
+          }
         }
       }
 
-      rdc::LuanchKernelAsync(tid, cur_stream);
+      rdc::LaunchAsyncWorkQueue(cur_stream);
 
-      // Switch buffer ( A->B, B-A)
-      const auto next = rdc::NextStream(cur_stream);
-      redwood::DeviceStreamSynchronize(next);
-      cur_stream = next;
-      rdc::ClearBuffer(tid, cur_stream);
+      // switch to next
+      cur_stream = (cur_stream + 1) % num_streams;
+
+      redwood::DeviceStreamSynchronize(cur_stream);
+      rdc::ResetBuffer(tid, cur_stream);
     }
 
-    const auto next = rdc::NextStream(cur_stream);
-    redwood::DeviceStreamSynchronize(next);
-  };
+    redwood::DeviceSynchronize();
 
-  if (app_params.cpu) {
-    TimeTask("Traversal", sequential_traversal);
+    const auto t1 = std::chrono::high_resolution_clock::now();
 
-  } else {
-    TimeTask("Traversal", single_buffer_traversal);
-    // TimeTask("Traversal", double_buffer_traversal);
+    for (int i = 0; i < num_streams; ++i) {
+      for (auto& ex : exes[cur_stream]) {
+        ex.CpuTraverse2();
+      }
+      cur_stream = (cur_stream + 1) % num_streams;
+    }
+
+    const auto t2 = std::chrono::high_resolution_clock::now();
+    const auto time_span1 =
+        std::chrono::duration_cast<std::chrono::duration<float>>(t1 - t0);
+    const auto time_span2 =
+        std::chrono::duration_cast<std::chrono::duration<float>>(t2 - t0);
+    std::cout << "Finished "
+              << "! Time took: " << time_span1.count() << "s. "
+              << time_span2.count() << "s. " << std::endl;
   }
 
-  std::sort(final_results.begin(), final_results.end(),
-            [](const auto& a, const auto& b) {
-              return a.first.data[0] < b.first.data[0];
-            });
-
-  for (int i = 0; i < 16; ++i) {
-    const auto q = final_results[i];
-    std::cout << "final " << i << ": " << q.first << " - " << q.second
-              << std::endl;
-  }
-
-  // std::cout << "final_results.size() " << final_results.size() << std::endl;
-
-  rdc::ReleaseReducers();
+  rdc::Release();
   return EXIT_SUCCESS;
 }

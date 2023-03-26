@@ -2,6 +2,7 @@
 
 #include <iostream>
 
+// For NN and KNN
 struct AppParams {
   int max_leaf_size;
   int batch_size;
