@@ -1,7 +1,6 @@
 #pragma once
 
-#include "Constants.hpp"
-#include "Macros.hpp"
+#include <vector>
 
 namespace redwood {
 
@@ -11,12 +10,7 @@ void Init();
 void DeviceSynchronize();
 void DeviceStreamSynchronize(int stream_id);
 
+// only useful in CUDA
 void AttachStreamMem(int stream_id, void* addr);
-
-// CUDA Only
-inline void AttachStream(int stream_id, void* addr) {
-  // if constexpr (kRedwoodBackend == redwood::Backends::kCuda)
-  AttachStreamMem(stream_id, addr);
-}
 
 }  // namespace redwood

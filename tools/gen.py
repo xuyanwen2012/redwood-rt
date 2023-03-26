@@ -29,11 +29,8 @@ elif args.distribution == "normal":
 else:
     raise ValueError("Invalid distribution type")
 
-# Write the points to a binary file
-with open(args.filename, "wb") as f:
-    f.write(points.tobytes())
-
 # Print 20 random points for inspection
 print("Randomly selected points for inspection:")
-for point in np.random.choice(points, 20):
-    print(point)
+indices = np.random.choice(points.shape[0], size=20, replace=False)
+for i in indices:
+    print(points[i])

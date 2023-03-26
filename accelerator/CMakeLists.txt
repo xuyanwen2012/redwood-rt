@@ -1,8 +1,0 @@
-foreach(BACKEND_NAME IN LISTS BACKENDS)
-  message(STATUS "Configuring backend ${BACKEND_NAME}")
-  if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${BACKEND_NAME})
-    add_subdirectory(${BACKEND_NAME})
-  else()
-    message(FATAL_ERROR "Backend ${BACKEND_NAME} does not exist.")
-  endif()
-endforeach()

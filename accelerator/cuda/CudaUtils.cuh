@@ -5,6 +5,8 @@
 
 #include "cuda_runtime.h"
 
+constexpr auto kNumStreams = 2;
+
 // Other Utils
 static void handle_error(const cudaError_t err, const char *file,
                          const int line) {

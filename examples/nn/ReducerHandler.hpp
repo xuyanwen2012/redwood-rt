@@ -1,155 +1,147 @@
 #pragma once
 
-#include <algorithm>
 #include <array>
-#include <limits>
 
-#include "../LeafNodeTable.hpp"
-#include "../NnBuffer.hpp"
-#include "AppParams.hpp"
+#include "../Utils.hpp"
+#include "DistanceMetrics.hpp"
+#include "KnnSet.hpp"
+
+using Task = std::pair<int, Point4F>;
+
 #include "Redwood.hpp"
-#include "Redwood/Kernels.hpp"
 
 namespace rdc {
+inline Point4F* lnt_base_addr = nullptr;
+inline int stored_max_leaf_size;
 
-// Make this Compile time parameter
-constexpr auto kNumThreads = 1;
-constexpr auto kNumStreams = redwood::kNumStreams;
+_NODISCARD inline Point4F* AllocateLnt(const int num_leaf_nodes,
+                                       const int max_leaf_size) {
+  stored_max_leaf_size = max_leaf_size;
+  lnt_base_addr = redwood::UsmMalloc<Point4F>(num_leaf_nodes * max_leaf_size);
+  return lnt_base_addr;
+}
 
-// ----- Others -----------
+_NODISCARD inline const Point4F* LntDataAddrAt(const int node_idx) {
+  return lnt_base_addr + node_idx * stored_max_leaf_size;
+}
 
-// Barnes-Hut Version
-// Need to have a interface for Reducer in general
-// And a specialized class for BH, NN, and KNN
-struct ReducerHandler {
-  void Init() {
-    for (int i = 0; i < kNumStreams; ++i) {
-      usm_buffers[i].Allocate(app_params.batch_size);
-
-      // Initilize Results
-      usm_result[i] = redwood::UsmMalloc<float>(app_params.batch_size);
-      // std::fill_n(usm_result[i], app_params.batch_size,
-      //             std::numeric_limits<float>::max());
-
-      // CUDA Only
-      redwood::AttachStreamMem(i, usm_buffers[i].query_point.data());
-      redwood::AttachStreamMem(i, usm_buffers[i].leaf_idx.data());
-      redwood::AttachStreamMem(i, usm_result[i]);
-    }
+// For NN and KNN
+struct Buffer {
+  void Alloc(const int buffer_size) {
+    u_qs = redwood::UsmMalloc<Point4F>(buffer_size);
+    u_leaf_idx = redwood::UsmMalloc<int>(buffer_size);
   }
 
-  void Release() {
-    for (int i = 0; i < kNumStreams; ++i) {
-      redwood::UsmFree(usm_result[i]);
-
-      // Mannuelly free the vector
-      redwood::UsmVector<Point4F> tmp;
-      usm_buffers[i].query_point.swap(tmp);
-      redwood::UsmVector<int> tmp2;
-      usm_buffers[i].leaf_idx.swap(tmp2);
-    }
+  void DeAlloc() const {
+    redwood::UsmFree(u_qs);
+    redwood::UsmFree(u_leaf_idx);
   }
 
-  _NODISCARD NnBuffer<Point4F>& UsmBuffer(const int stream_id) {
-    return usm_buffers[stream_id];
+  _NODISCARD int Size() const { return num_active; }
+
+  void Reset() { num_active = 0; }
+
+  void Push(const Task& task, const int node_idx) {
+    u_qs[num_active] = task.second;
+    u_leaf_idx[num_active] = node_idx;
+    ++num_active;
   }
 
-  _NODISCARD float* UsmResultAddr(const int stream_id) {
-    return usm_result[stream_id];
-  }
-
-  // Point to Buffers
-  std::array<NnBuffer<Point4F>, kNumStreams> usm_buffers;
-  std::array<float*, kNumStreams> usm_result;
+  int num_active;
+  Point4F* u_qs;
+  int* u_leaf_idx;
 };
 
-inline std::array<ReducerHandler, kNumThreads> rhs;
+struct ResultBuffer {
+  void Alloc(const int buffer_size, const int k = 1) {
+    stored_k = k;
+    underlying_dat = redwood::UsmMalloc<float>(buffer_size * k);
+  }
 
-inline void InitReducers() {
+  void DeAlloc() const { redwood::UsmFree(underlying_dat); }
+
+  _NODISCARD float* GetAddrAt(const int executor_id) const {
+    return underlying_dat + executor_id * stored_k;
+  }
+
+  float* underlying_dat;
+  int stored_k;
+};
+
+inline std::array<Buffer, 2> buffers;
+inline std::array<ResultBuffer, 2> result_addr;
+
+inline void Init(const int batch_size) {
   redwood::Init();
-  for (int i = 0; i < kNumThreads; ++i) rhs[i].Init();
+
+  for (int i = 0; i < 2; ++i) {
+    buffers[i].Alloc(batch_size);
+    result_addr[i].Alloc(batch_size);
+
+    redwood::AttachStreamMem(i, buffers[i].u_leaf_idx);
+    redwood::AttachStreamMem(i, buffers[i].u_qs);
+    redwood::AttachStreamMem(i, result_addr[i].underlying_dat);
+  }
 }
 
-inline void ReleaseReducers() {
-  rdc::FreeLeafNodeTalbe();
-  for (int i = 0; i < kNumThreads; ++i) rhs[i].Release();
-}
-
-inline void ReduceLeafNode(const int tid, const int stream_id,
-                           const int node_idx, const Point4F q) {
-  rhs[tid].UsmBuffer(stream_id).Push(q, node_idx);
-}
-
-inline void ClearBuffer(const int tid, const int stream_id) {
-  rhs[tid].UsmBuffer(stream_id).Clear();
-}
-
-inline void ClearResult(const int tid, const int stream_id) {
-  // std::fill_n(rhs[tid].usm_result[stream_id], app_params.batch_size,
-  //             std::numeric_limits<float>::max());
-}
-
-_NODISCARD inline const int NextStream(const int stream_id) {
-  return (kNumStreams - 1) - stream_id;
-}
-
-// Mostly for KNN
-template <typename T>
-_NODISCARD T* GetResultAddr(const int tid, const int stream_id) {
-  return rhs[tid].UsmResultAddr(stream_id);
-}
-
-// Mostly for BH
-template <typename T>
-_NODISCARD T GetResultValueUnchecked(const int tid, const int stream_id) {
-  return *GetResultAddr<T>(tid, stream_id);
-}
-
-inline float KernelFuncKnn(const Point4F p, const Point4F q) {
-  auto dist = float();
-
-  for (int i = 0; i < 4; ++i) {
-    const auto diff = p.data[i] - q.data[i];
-    dist += diff * diff;
+inline void Release() {
+  for (int i = 0; i < 2; ++i) {
+    buffers[i].DeAlloc();
+    result_addr[i].DeAlloc();
   }
 
-  return sqrtf(dist);
+  redwood::UsmFree(lnt_base_addr);
 }
 
-template <int LeafSize>
-void Debug(const int* u_leaf_indices, const Point4F* u_q_points,
-           const int num_active_leafs, float* outs, const Point4F* u_lnt_data,
-           const int* u_lnt_sizes, int, int) {
-  for (int i = 0; i < num_active_leafs; ++i) {
-    const auto leaf_id_to_load = u_leaf_indices[i];
-    const auto q = u_q_points[i];
-    auto my_min = std::numeric_limits<float>::max();
+inline void ResetBuffer(const int tid, const int cur_stream) {
+  buffers[cur_stream].Reset();
+}
 
-    for (int j = 0; j < LeafSize; ++j) {
-      const auto p = u_lnt_data[leaf_id_to_load * LeafSize + j];
-      const auto dist = KernelFuncKnn(p, q);
-      // std::cout << dist << std::endl;
-      my_min = std::min(my_min, dist);
+_NODISCARD inline float* RequestResultAddr(const int stream_id,
+                                           const int executor_index) {
+  return result_addr[stream_id].GetAddrAt(executor_index);
+}
+
+inline void ReduceLeafNode(const int stream_id, const Task& task,
+                           const int node_idx) {
+  buffers[stream_id].Push(task, node_idx);
+}
+
+inline void DebugCpuReduction(const Buffer& buf, const dist::Euclidean functor,
+                              const ResultBuffer& results) {
+  const auto n = buf.Size();
+
+  // i is batch id, = tid, = index in the buffer
+  for (int i = 0; i < n; ++i) {
+    const auto node_idx = buf.u_leaf_idx[i];
+    const auto q = buf.u_qs[i];
+
+    const auto node_addr = LntDataAddrAt(node_idx);
+    const auto addr = reinterpret_cast<KnnSet*>(results.GetAddrAt(i));
+
+    for (int j = 0; j < stored_max_leaf_size; ++j) {
+      const float dist = functor(node_addr[j], q);
+      addr->Insert(dist);
     }
-
-    outs[i] = my_min;
-    // std::cout << "outs[i]: " << outs[i] << std::endl;
-    // std::cout << "my_min: " << my_min << std::endl;
-    // exit(0);
   }
 }
 
-inline void LuanchKernelAsync(const int tid, const int stream_id) {
-  // TODO: Need to select User's kernel
+inline void LaunchAsyncWorkQueue(const int stream_id) {
+  // DebugCpuReduction(buffers[stream_id], dist::Euclidean(),
+  //                   result_addr[stream_id]);
 
-  Debug<32>(
-      rhs[tid].UsmBuffer(stream_id).LData(), /* Buffered data to process */
-      rhs[tid].UsmBuffer(stream_id).QData(), /* / */
-      rhs[tid].UsmBuffer(stream_id).Size(),
-      rhs[tid].UsmResultAddr(stream_id), /* Return Addr */
-      rdc::LntDataAddr(),                /* Shared data */
-      nullptr,                           /* Ignore for now */
-      app_params.max_leaf_size, stream_id);
+  const auto num_active = buffers[stream_id].Size();
+
+  if constexpr (kDebugMod) {
+    std::cout << "rdc::LaunchAsyncWorkQueue " << stream_id << ", "
+              << buffers[stream_id].Size() << " actives." << std::endl;
+
+    // 128? 256?
+  }
+
+  redwood::LaunchNnKenrnel(buffers[stream_id].u_leaf_idx,
+                           buffers[stream_id].u_qs, num_active,
+                           result_addr[stream_id].underlying_dat, lnt_base_addr,
+                           stored_max_leaf_size, stream_id);
 }
-
 }  // namespace rdc

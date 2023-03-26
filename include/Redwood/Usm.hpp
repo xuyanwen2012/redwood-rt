@@ -5,13 +5,12 @@
 namespace redwood {
 
 void* UsmMalloc(std::size_t n);
+void UsmFree(void* ptr);
 
 template <typename T>
 T* UsmMalloc(std::size_t n) {
   return static_cast<T*>(UsmMalloc(n * sizeof(T)));
 }
-
-void UsmFree(void* ptr);
 
 template <typename T>
 class UsmAlloc {
@@ -50,5 +49,4 @@ bool operator!=(const UsmAlloc<T>&, const UsmAlloc<U>&) {
 
 template <typename T>
 using UsmVector = std::vector<T, redwood::UsmAlloc<T>>;
-
 }  // namespace redwood
