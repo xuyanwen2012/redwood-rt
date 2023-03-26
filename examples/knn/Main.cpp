@@ -1,352 +1,175 @@
 #include <algorithm>
-#include <array>
+#include <cassert>
+#include <cmath>
+#include <cstddef>
 #include <cstdlib>
+#include <iostream>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <queue>
+#include <random>
 #include <vector>
 
 #include "../LoadFile.hpp"
 #include "../Utils.hpp"
-#include "KDTree.hpp"
-#include "Kernel.hpp"
-#include "KnnSet.hpp"
+#include "../cxxopts.hpp"
+#include "../nn/AppParams.hpp"
+#include "../nn/DistanceMetrics.hpp"
+#include "../nn/KDTree.hpp"
+#include "Executor.hpp"
+#include "GlobalVars.hpp"
 #include "ReducerHandler.hpp"
-#include "Redwood/Core.hpp"
+#include "Redwood.hpp"
 
-inline std::shared_ptr<kdt::KdTree> tree_ref;
-
-enum class ExecutionState { kWorking, kFinished };
-
-struct CallStackField {
-  kdt::Node* current;
-  int axis;
-  float train;
-  kdt::Dir dir;
-};
-
-constexpr auto kK = 32;
-
-// Knn Algorithm
-class Executor {
- public:
-  Executor() = delete;
-
-  // Thread id, i.e., [0, .., n_threads]
-  // Stream id in the thread, i.e., [0, 1]
-  // My id in the group executor, i.e., [0,...,1023]
-  Executor(const int tid, const int stream_id, const int my_id)
-      : state_(ExecutionState::kFinished),
-        my_tid_(tid),
-        my_stream_id_(stream_id),
-        debug_uid_(my_id) {
-    // values need experiment
-    stack_.reserve(16);
-
-    // When created,
-    float* base_addr = rdc::GetResultAddr<float>(my_tid_, my_stream_id_);
-    u_my_result_addr_ = base_addr + my_id * kK;
-
-    // std::cout << "\tCreated " << my_id << ": at addr " << u_my_result_addr_
-    //           << std::endl;
-  }
-
-  _NODISCARD bool Finished() const {
-    return state_ == ExecutionState::kFinished;
-  }
-
-  void StartQuery(const Point4F q) {
-    my_query_point_ = q;
-    stack_.clear();
-    k_set_->Clear();
-    cur_ = nullptr;
-    Execute();
-  }
-
-  void Resume() { Execute(); }
-
- protected:
-  void Execute() {
-    if (state_ == ExecutionState::kWorking) goto my_resume_point;
-
-    state_ = ExecutionState::kWorking;
-    cur_ = tree_ref->root_;
-
-    // Begin Iteration
-    while (cur_ != nullptr || !stack_.empty()) {
-      // Traverse all the way to left most leaf node
-      while (cur_ != nullptr) {
-        if (cur_->IsLeaf()) {
-          //
-          // **** Reduction at Leaf Node (replaced with Redwood API) ****
-          rdc::ReduceLeafNode(my_tid_, my_stream_id_, cur_->uid,
-                              my_query_point_);
-          // ****************************
-
-          // **** Coroutine Reuturn (API) ****
-          return;
-        my_resume_point:
-          // ****************************
-
-          cur_ = nullptr;
-          continue;
-        }
-
-        // **** Reduction at tree node ****
-        const unsigned accessor_idx =
-            tree_ref->v_acc_[cur_->node_type.tree.idx_mid];
-
-        const float dist =
-            KernelFunc(tree_ref->in_data_ref_[accessor_idx], my_query_point_);
-
-        k_set_->Insert(dist);
-
-        // **********************************
-
-        const int axis = cur_->node_type.tree.axis;
-        const float train = tree_ref->in_data_ref_[accessor_idx].data[axis];
-        const kdt::Dir dir = my_query_point_.data[axis] < train
-                                 ? kdt::Dir::kLeft
-                                 : kdt::Dir::kRight;
-
-        stack_.push_back({cur_, axis, train, dir});
-        cur_ = cur_->GetChild(dir);
-      }
-
-      // We resume back from Break point, and now we are still in the branch
-      // node, we can check if there's any thing left on the stack.
-      if (!stack_.empty()) {
-        const auto [last_cur, axis, train, dir] = stack_.back();
-        stack_.pop_back();
-
-        // Check if there is a possibility of the NN lies on the other half
-        // If the difference between the query point and the other splitting
-        // plane is greater than the current found minimum distance, then it
-        // is impossible to have a NN there.
-
-        Point4F a{};
-        Point4F b{};
-        a.data[axis] = my_query_point_.data[axis];
-        b.data[axis] = train;
-        const auto diff = KernelFunc(a, b);
-        if (diff < k_set_->WorstDist()) {
-          cur_ = last_cur->GetChild(FlipDir(dir));
-        }
-      }
-    }
-
-    // Done traversals, Write back to final results
-    state_ = ExecutionState::kFinished;
-
-    // k_set_->DebugPrint();
-    // exit(0);
-  }
-
- private:
-  Point4F my_query_point_;
-
-  // this should point to USM region, unique to each executor.
-  // If k = 32,
-  // Each address is 128 bytes (or 16 eight-byte words) apart.
- public:
-  // Pointer to the USM address requested from the Backend.
-  union {
-    KnnSet<float, kK>* k_set_;
-    float* u_my_result_addr_;
+_NODISCARD Point4F RandPoint() {
+  return {
+      MyRand(0, 1024),
+      MyRand(0, 1024),
+      MyRand(0, 1024),
+      MyRand(0, 1024),
   };
-
-  // Couroutine related
-  std::vector<CallStackField> stack_;
-  kdt::Node* cur_;
-  ExecutionState state_;
-
-  // Store some reference used
-  const int my_tid_;
-  const int my_stream_id_;
-
- public:
-  const int debug_uid_;
-};
-
-class CpuExecutor {
- public:
-  CpuExecutor(const int tid) : my_tid_(tid) {
-    h_my_result_ = static_cast<float*>(malloc(kK * sizeof(float)));
-  }
-
-  ~CpuExecutor() { free(h_my_result_); }
-
-  void StartQuery(const Point4F q) {
-    my_query_point_ = q;
-    k_set_->Clear();
-    TraversalRecursive(tree_ref->GetRoot());
-  }
-
-  union {
-    KnnSet<float, kK>* k_set_;
-    float* h_my_result_;
-  };
-
- private:
-  void TraversalRecursive(const kdt::Node* cur) {
-    if (cur->IsLeaf()) {
-      // k_set_->DebugPrint();
-
-      const auto leaf_addr = rdc::LntDataAddrAt(cur->uid);
-      for (int i = 0; i < tree_ref->GetParams().leaf_max_size; ++i) {
-        const float dist = KernelFunc(leaf_addr[i], my_query_point_);
-        k_set_->Insert(dist);
-      }
-
-    } else {
-      // **** Reduction at tree node ****
-      const unsigned accessor_idx =
-          tree_ref->v_acc_[cur->node_type.tree.idx_mid];
-      const float dist =
-          KernelFunc(tree_ref->in_data_ref_[accessor_idx], my_query_point_);
-      k_set_->Insert(dist);
-
-      // **********************************
-
-      const auto axis = cur->node_type.tree.axis;
-      const auto train = tree_ref->in_data_ref_[accessor_idx].data[axis];
-      const auto dir = my_query_point_.data[axis] < train ? kdt::Dir::kLeft
-                                                          : kdt::Dir::kRight;
-
-      TraversalRecursive(cur->GetChild(dir));
-
-      Point4F a{};
-      Point4F b{};
-      a.data[axis] = my_query_point_.data[axis];
-      b.data[axis] = train;
-      const auto diff = KernelFunc(a, b);
-      if (diff < k_set_->WorstDist()) {
-        TraversalRecursive(cur->GetChild(FlipDir(dir)));
-      }
-    }
-  }
-
-  Point4F my_query_point_;
-  const int my_tid_;
-};
+}
 
 int main(int argc, char** argv) {
-  if (argc < 2) {
+  cxxopts::Options options("Nearest Neighbor (NN)",
+                           "Redwood NN demo implementation");
+  options.add_options()("f,file", "File name", cxxopts::value<std::string>())(
+      "q,query", "Num to Query", cxxopts::value<int>()->default_value("16384"))(
+      "p,thread", "Num Thread", cxxopts::value<int>()->default_value("1"))(
+      "l,leaf", "Leaf node size", cxxopts::value<int>()->default_value("32"))(
+      "b,batch_size", "Batch Size",
+      cxxopts::value<int>()->default_value("1024"))(
+      "c,cpu", "Enable Cpu Baseline",
+      cxxopts::value<bool>()->default_value("false"))("h,help", "Print usage");
+
+  options.parse_positional({"file", "query"});
+
+  const auto result = options.parse(argc, argv);
+
+  if (result.count("help")) {
+    std::cout << options.help() << std::endl;
+    exit(EXIT_SUCCESS);
+  }
+
+  if (!result.count("file")) {
     std::cerr << "requires an input file (\"data/input_nn_1m_4f.dat\")\n";
-    return EXIT_FAILURE;
+    std::cout << options.help() << std::endl;
+    exit(EXIT_FAILURE);
   }
 
-  const char* data_file = argv[1];
+  const auto data_file = result["file"].as<std::string>();
+  app_params.max_leaf_size = result["leaf"].as<int>();
+  app_params.m = result["query"].as<int>();
+  app_params.batch_size = result["batch_size"].as<int>();
+  app_params.num_threads = result["thread"].as<int>();
+  app_params.cpu = result["cpu"].as<bool>();
+  std::cout << app_params << std::endl;
 
-  const auto leaf_size = 96;
-  const auto batch_size = 32;
+  // Load/Prepare Data
+  const auto in_data = load_data_from_file<Point4F>(data_file);
+  const auto n = in_data.size();
 
-  const auto [in, n] = mmap_file<Point4F>(data_file);
+  std::queue<Task> q_data;
+  for (int i = 0; i < app_params.m; ++i) q_data.emplace(i, RandPoint());
 
-  // Inspect input data is correct
-  for (int i = 0; i < 10; ++i) {
-    std::cout << in[i] << std::endl;
-  }
+  // Build tree
+  const kdt::KdtParams params{app_params.max_leaf_size};
+  tree_ref = std::make_shared<kdt::KdTree>(params, in_data.data(), n);
 
-  std::cout << "Building Tree..." << std::endl;
-  const kdt::KdtParams params{leaf_size};
-  auto tree = std::make_shared<kdt::KdTree>(params, in, n);
-  tree_ref = tree;
+  const auto num_leaf_nodes = tree_ref->GetStats().num_leaf_nodes;
+  auto lnt_addr = rdc::AllocateLnt(num_leaf_nodes, app_params.max_leaf_size);
+  tree_ref->LoadPayload(lnt_addr);
 
-  std::cout << "Loading USM leaf node data..." << std::endl;
-  rdc::InitReducers();
+  // Debug Settings
+  final_results1.resize(app_params.m);
+  final_results2.resize(app_params.m);
 
-  // Now octree tree is comstructed, need to move leaf node data into USM
-  const auto num_leaf_nodes = tree->GetStats().num_leaf_nodes;
-  rdc::AllocateLeafNodeTable(num_leaf_nodes, leaf_size, false);
-  tree->LoadPayload(rdc::LntDataAddr());
+  // Init
+  rdc::Init(app_params.batch_size);
 
-  // TODO: figure out a better way, not important right now
-  // munmap_file(in, n);
+  //if (app_params.cpu) {
+    TimeTask("CPU Traversal", [&] {
+      // Pure CPU traverse
+      Executor cpu_exe{0, 0, 0};
 
-  std::cout << "Making tasks..." << std::endl;
+      while (!q_data.empty()) {
+        cpu_exe.SetQuery(q_data.front());
+        cpu_exe.CpuTraverse();
+        q_data.pop();
 
-  static auto rand_point4f = []() {
-    return Point4F{MyRand(0.0f, 1000.0f), MyRand(0.0f, 1000.0f),
-                   MyRand(0.0f, 1000.0f), 1.0f};
-  };
-  const auto m = 1024;
-  std::queue<Point4F> q_data;
-  for (int i = 0; i < m; ++i) q_data.push(rand_point4f());
+        // cpu_exe.result_set->DebugPrint();
+      }
+    });
+  //} else {
+    // Use Redwood
+    constexpr auto num_streams = 2;
 
-  std::cout << "Start Traversal " << std::endl;
+    constexpr auto tid = 0;
 
-  // Example:
-  //   Created 0: at addr 0x100c60000
-  //   Created 1: at addr 0x100c60080
-  //   Created 2: at addr 0x100c60100
-  //   Created 3: at addr 0x100c60180
-  //   Created 4: at addr 0x100c60200
-  //   Created 5: at addr 0x100c60280
-  //   ...
-  //
-  constexpr int tid = 0;
-
-  if constexpr (constexpr auto cpu = false; cpu) {
-    // Just CPU traversal
-
-    CpuExecutor exe{tid};
-
-    const auto q = q_data.front();
-    q_data.pop();
-
-    exe.StartQuery(q);
-
-    exe.k_set_->DebugPrint();
-
-  } else {
-    // Use redwood runtime
-    std::vector<Executor> exe[rdc::kNumStreams];
-    for (int stream_id = 0; stream_id < rdc::kNumStreams; ++stream_id) {
-      exe[stream_id].reserve(batch_size);
-      for (int i = 0; i < batch_size; ++i) {
-        exe[stream_id].emplace_back(tid, stream_id, i);
+    std::vector<Executor> exes[num_streams];
+    for (int stream_id = 0; stream_id < num_streams; ++stream_id) {
+      exes[stream_id].reserve(app_params.batch_size);
+      for (int i = 0; i < app_params.batch_size; ++i) {
+        exes[stream_id].emplace_back(tid, stream_id, i);
       }
     }
 
-    int cur_stream = 0;
+    const auto t0 = std::chrono::high_resolution_clock::now();
+
+    auto cur_stream = 0;
     while (!q_data.empty()) {
-      // Execute a group of 1024 executors at once, 1 step per executor
-      // for (auto it = exe[cur_stream].begin(); it != exe[cur_stream].end();
-      // ++it) {
-      for (auto& exe : exe[cur_stream]) {
-        if (exe.Finished()) {
-          // Make there is task in the queue
-          if (q_data.empty()) {
-            break;
+      for (auto it = exes[cur_stream].begin(); it != exes[cur_stream].end();) {
+        if (it->Finished()) {
+          if (!q_data.empty()) {
+            const auto q = q_data.front();
+            q_data.pop();
+
+            it->SetQuery(q);
+            it->StartQuery();
           }
 
-          const auto q = q_data.front();
-          q_data.pop();
-
-          exe.StartQuery(q);
+          ++it;
         } else {
-          exe.Resume();
+          it->Resume();
+          if (it->Finished()) {
+            // Do not increment , let the same executor (it) take another task
+          } else {
+            ++it;
+          }
         }
       }
 
-      rdc::LuanchKernelAsync(tid, cur_stream);
+      rdc::LaunchAsyncWorkQueue(cur_stream);
 
-      const auto next = rdc::NextStream(cur_stream);
-      redwood::DeviceStreamSynchronize(next);
+      // switch to next
+      cur_stream = (cur_stream + 1) % num_streams;
 
-      // Switch buffer ( A->B, B-A)
-      cur_stream = next;
-      rdc::ClearBuffer(tid, cur_stream);
+      redwood::DeviceStreamSynchronize(cur_stream);
+      rdc::ResetBuffer(tid, cur_stream);
     }
-  }
 
-  // TODO: Handle Remaining
+    redwood::DeviceSynchronize();
 
-  // rdc::LuanchKernelAsync(tid, cur_stream);
-  // const auto next = rdc::NextStream(cur_stream);
-  // redwood::DeviceStreamSynchronize(next);
+    const auto t1 = std::chrono::high_resolution_clock::now();
 
-  rdc::ReleaseReducers();
+    for (int i = 0; i < num_streams; ++i) {
+      for (auto& ex : exes[cur_stream]) {
+        ex.CpuTraverse2();
+      }
+      cur_stream = (cur_stream + 1) % num_streams;
+    }
+
+    const auto t2 = std::chrono::high_resolution_clock::now();
+    const auto time_span1 =
+        std::chrono::duration_cast<std::chrono::duration<float>>(t1 - t0);
+    std::cout << "Finished "
+              << "! Time took: " << time_span1.count() << "s. " << std::endl;
+  //}
+
+  PrintFinalResult(final_results1, 32);
+  PrintFinalResult(final_results2, 32);
+
+  rdc::Release();
   return EXIT_SUCCESS;
 }
