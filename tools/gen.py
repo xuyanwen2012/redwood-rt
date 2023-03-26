@@ -34,3 +34,7 @@ print("Randomly selected points for inspection:")
 indices = np.random.choice(points.shape[0], size=20, replace=False)
 for i in indices:
     print(points[i])
+
+# Write the points to a binary file
+with open(args.filename, "wb") as f:
+    f.write(points.tobytes())
