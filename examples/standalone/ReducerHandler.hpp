@@ -80,9 +80,9 @@ inline void Init(const int batch_size) {
     buffers[i].Alloc(batch_size);
     result_addr[i].Alloc(batch_size);
 
-    redwood::AttachStream(i, buffers[i].u_leaf_idx);
-    redwood::AttachStream(i, buffers[i].u_qs);
-    redwood::AttachStream(i, result_addr[i].underlying_dat);
+    redwood::AttachStreamMem(i, buffers[i].u_leaf_idx);
+    redwood::AttachStreamMem(i, buffers[i].u_qs);
+    redwood::AttachStreamMem(i, result_addr[i].underlying_dat);
   }
 }
 
