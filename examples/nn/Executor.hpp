@@ -16,6 +16,7 @@ struct CallStackField {
 };
 
 // Knn Algorithm
+template <typename Functor>
 class Executor {
  public:
   Executor() = delete;
@@ -65,7 +66,7 @@ class Executor {
 
  protected:
   void Execute() {
-    constexpr dist::Euclidean functor;
+    constexpr Functor functor;
 
     if (state_ == ExecutionState::kWorking) goto my_resume_point;
     state_ = ExecutionState::kWorking;
@@ -135,7 +136,7 @@ class Executor {
   }
 
   void TraversalRecursive(const kdt::Node* cur) {
-    constexpr dist::Euclidean functor;
+    constexpr Functor functor;
 
     if (cur->IsLeaf()) {
       if constexpr (kDebugMod) {

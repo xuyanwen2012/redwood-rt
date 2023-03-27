@@ -15,8 +15,8 @@
 #include "../Utils.hpp"
 #include "../cxxopts.hpp"
 #include "AppParams.hpp"
-#include "DistanceMetrics.hpp"
 #include "Executor.hpp"
+#include "Functors/DistanceMetrics.hpp"
 #include "GlobalVars.hpp"
 #include "KDTree.hpp"
 #include "ReducerHandler.hpp"
@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
   if (app_params.cpu) {
     TimeTask("CPU Traversal", [&] {
       // Pure CPU traverse
-      Executor cpu_exe{0, 0, 0};
+      Executor<dist::Euclidean> cpu_exe{0, 0, 0};
 
       while (!q_data.empty()) {
         cpu_exe.SetQuery(q_data.front());
@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
 
     constexpr auto tid = 0;
 
-    std::vector<Executor> exes[num_streams];
+    std::vector<Executor<dist::Euclidean>> exes[num_streams];
     for (int stream_id = 0; stream_id < num_streams; ++stream_id) {
       exes[stream_id].reserve(app_params.batch_size);
       for (int i = 0; i < app_params.batch_size; ++i) {

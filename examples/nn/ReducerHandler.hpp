@@ -3,8 +3,10 @@
 #include <array>
 
 #include "../Utils.hpp"
-#include "DistanceMetrics.hpp"
+#include "Functors/DistanceMetrics.hpp"
 #include "KnnSet.hpp"
+#include "Redwood/Kernel.hpp"
+#include "Redwood/Point.hpp"
 
 using Task = std::pair<int, Point4F>;
 
@@ -127,9 +129,6 @@ inline void DebugCpuReduction(const Buffer& buf, const dist::Euclidean functor,
 }
 
 inline void LaunchAsyncWorkQueue(const int stream_id) {
-  // DebugCpuReduction(buffers[stream_id], dist::Euclidean(),
-  //                   result_addr[stream_id]);
-
   const auto num_active = buffers[stream_id].Size();
 
   if constexpr (kDebugMod) {
@@ -139,9 +138,10 @@ inline void LaunchAsyncWorkQueue(const int stream_id) {
     // 128? 256?
   }
 
-  redwood::LaunchNnKenrnel(buffers[stream_id].u_leaf_idx,
-                           buffers[stream_id].u_qs, num_active,
-                           result_addr[stream_id].underlying_dat, lnt_base_addr,
-                           stored_max_leaf_size, stream_id);
+  dist::Euclidean functor{};
+  redwood::NearestNeighborKernel(
+      stream_id, lnt_base_addr, stored_max_leaf_size, buffers[stream_id].u_qs,
+      buffers[stream_id].u_leaf_idx, num_active,
+      result_addr[stream_id].underlying_dat, functor);
 }
 }  // namespace rdc

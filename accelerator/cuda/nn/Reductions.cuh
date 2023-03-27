@@ -6,7 +6,6 @@
 #include <cub/cub.cuh>
 #include <limits>
 
-#include "Functors.cuh"
 #include "Redwood/Point.hpp"
 
 namespace cg = cooperative_groups;
@@ -41,7 +40,7 @@ template <typename Functor>
 __global__ void FindMinDistWarp6(const Point4F* lnt, const Point4F* u_q,
                                  const int* u_node_idx, float* u_out,
                                  const int num_active, const int max_leaf_size,
-                                 const Functor functor) {
+                                 Functor functor) {
   using WarpReduce = cub::WarpReduce<float>;
 
   __shared__ WarpReduce::TempStorage temp_storage[32];
