@@ -1,4 +1,3 @@
-
 #include "CudaUtils.cuh"
 #include "Redwood/Core.hpp"
 

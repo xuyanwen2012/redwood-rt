@@ -6,13 +6,15 @@ INCLUDES += -I ./extern/cub-1.17.2/ -I ./extern/thrust-1.17.2/
 SOURCES = $(wildcard *.cu)
 OBJECTS = $(SOURCES:.cu=.o)
 
-all: libredwoodcuda.a
+LIBRARY = libredwoodcuda.a
+
+all: $(LIBRARY)
 
 %.o: %.cu
 	$(NVCC) $(INCLUDES) $(NVCCFLAGS) -c $< -o $@ -I ../../include/
 
-libredwoodcuda.a: $(OBJECTS)
+$(LIBRARY): $(OBJECTS)
 	ar rcs $@ $^
 
 clean:
-	rm -f *.o libredwoodcuda.a
+	rm -f *.o $(LIBRARY)
