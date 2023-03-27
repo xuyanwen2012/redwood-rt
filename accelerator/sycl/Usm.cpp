@@ -3,9 +3,10 @@
 #include <CL/sycl.hpp>
 #include <iostream>
 
-#include "CudaUtils.cuh"
-
 namespace redwood {
+
+extern sycl::device device;
+extern sycl::context ctx;
 
 void* UsmMalloc(const std::size_t n) {
   void* tmp;

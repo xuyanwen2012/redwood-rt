@@ -9,3 +9,6 @@ machine for development and testing purposes.
 
 ### Prerequisites
 
+### Misc
+
+`/usr/local/llvm-14.0/bin/clang-format`

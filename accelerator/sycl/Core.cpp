@@ -2,39 +2,14 @@
 #include "Redwood/Core.hpp"
 
 #include <CL/sycl.hpp>
-#include <iomanip>
-#include <iostream>
 
+#include "Consts.hpp"
 #include "SyclUtils.hpp"
 
-namespace redwood {
-
+// Global Variables
 sycl::device device;
 sycl::context ctx;
 sycl::queue qs[kNumStreams];
-
-// This is how much you can use on SYCl
-constexpr auto kBlockThreads = 256;
-
-void ShowDevice(const sycl::queue& q) {
-  // Output platform and device information.
-  const auto device = q.get_device();
-  const auto p_name =
-      device.get_platform().get_info<sycl::info::platform::name>();
-  std::cout << std::setw(20) << "Platform Name: " << p_name << "\n";
-  const auto p_version =
-      device.get_platform().get_info<sycl::info::platform::version>();
-  std::cout << std::setw(20) << "Platform Version: " << p_version << "\n";
-  const auto d_name = device.get_info<sycl::info::device::name>();
-  std::cout << std::setw(20) << "Device Name: " << d_name << "\n";
-  const auto max_work_group =
-      device.get_info<sycl::info::device::max_work_group_size>();
-  std::cout << std::setw(20) << "Max Work Group: " << max_work_group << "\n";
-  const auto max_compute_units =
-      device.get_info<sycl::info::device::max_compute_units>();
-  std::cout << std::setw(20) << "Max Compute Units: " << max_compute_units
-            << "\n\n";
-}
 
 void SyclWarmUp(sycl::queue& q) {
   int sum;
@@ -61,7 +36,6 @@ void Init() {
     qs[i] = sycl::queue(qs[0].get_context(), device);
 
   ShowDevice(qs[0]);
-
   SyclWarmUp(qs[0]);
 }
 

@@ -1,9 +1,13 @@
 #include "Redwood/Kernel.hpp"
 
+#include <CL/sycl.hpp>
 #include <cmath>
 #include <iostream>
 
+#include "Consts.hpp"
 #include "Redwood/Point.hpp"
+
+extern sycl::queue qs[kNumStreams];
 
 namespace redwood {
 

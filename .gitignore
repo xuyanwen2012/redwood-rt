@@ -1,5 +1,6 @@
 # VS Code related
 .vscode
+.cache
 
 # Prerequisites
 *.d
