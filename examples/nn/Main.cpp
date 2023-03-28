@@ -153,7 +153,7 @@ int main(int argc, char** argv) {
 
     for (int i = 0; i < num_streams; ++i) {
       for (auto& ex : exes[cur_stream]) {
-        ex.CpuTraverse2();
+        ex.CpuTraverse();
       }
       cur_stream = (cur_stream + 1) % num_streams;
     }
