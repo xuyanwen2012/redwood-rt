@@ -23,12 +23,12 @@
 #include "Redwood.hpp"
 
 _NODISCARD Point4F RandPoint() {
-  return {
-      MyRand(0, 1024),
-      MyRand(0, 1024),
-      MyRand(0, 1024),
-      MyRand(0, 1024),
-  };
+  Point4F p;
+  p.data[0] = MyRand(0, 1024);
+  p.data[1] = MyRand(0, 1024);
+  p.data[2] = MyRand(0, 1024);
+  p.data[3] = MyRand(0, 1024);
+  return p;
 }
 
 int main(int argc, char** argv) {
