@@ -1,36 +1,55 @@
 #pragma once
 
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
+#include <cstddef>
+#include <fstream>
 #include <iostream>
+#include <vector>
 
 template <typename T>
-std::pair<T *, size_t> mmap_file(const std::string &filename) {
-  struct stat s;
-  stat(filename.c_str(), &s);
-
-  int fd = open(filename.c_str(), O_RDONLY, 0);
-  if (fd == -1) {
-    std::cerr << "Failed to open file. Abort." << std::endl;
-    exit(1);
+std::vector<T> load_data_from_file(const std::string& filename) {
+  std::ifstream infile(filename, std::ios::binary);
+  if (!infile.is_open()) {
+    throw std::runtime_error("Failed to open file: " + filename);
   }
 
-  T *map = reinterpret_cast<T *>(
-      mmap(nullptr, s.st_size, PROT_READ, MAP_SHARED, fd, 0));
+  // Read all floats from the input file
+  infile.seekg(0, std::ios::end);
+  std::streamsize size = infile.tellg();
+  infile.seekg(0, std::ios::beg);
 
-  close(fd);
+  std::vector<T> data(size / sizeof(T));
+  infile.read(reinterpret_cast<char*>(data.data()), size);
 
-  const auto data_size = s.st_size / sizeof(T);
+  if (infile.gcount() != size) {
+    throw std::runtime_error("Failed to read entire file: " + filename);
+  }
 
-  return {map, data_size};
+  return data;
 }
 
 template <typename T>
-void munmap_file(T *data, size_t size) {
-  if (munmap(data, size * sizeof(T)) == -1) {
-    std::cerr << "Failed to munmap file" << std::endl;
+std::vector<T> read_floats_from_file(const std::string& filename, const int n,
+                                     const int m) {
+  std::vector<T> in_data(n);
+  std::vector<T> q_data(m);
+
+  std::ifstream infile(filename, std::ios::binary);
+
+  infile.seekg(0, std::ios::end);
+  std::streamsize size = infile.tellg();
+  infile.seekg(0, std::ios::beg);
+
+  if (n + m > size / sizeof(T)) {
+    throw std::runtime_error("Not enough data in the file: " + filename);
   }
+
+  if (infile) {
+    infile.read(reinterpret_cast<char*>(in_data.data()), n * sizeof(T));
+    infile.read(reinterpret_cast<char*>(q_data.data()), m * sizeof(T));
+    infile.close();
+  } else {
+    std::cerr << "Error opening file" << std::endl;
+  }
+
+  return in_data;
 }

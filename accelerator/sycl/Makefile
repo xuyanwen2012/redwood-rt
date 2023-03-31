@@ -1,19 +1,19 @@
 DPCPP = clang++ -fsycl
 DPCPPFLAGS += -std=c++17 -Wall -Wunused-result -O3 -DNDEBUG
 
-SRC     := $(wildcard *.cpp)
-OBJS := $(patsubst %.cpp,%.o,$(SRC))
+SOURCES = $(wildcard *.cpp)
+OBJECTS = $(SOURCES:.cpp=.o)
 
-LIBRARY = libsycl.a
+LIBRARY = libredwoodsycl.a
 
 all: $(LIBRARY)
 
-$(LIBRARY): $(OBJS)
-	ar rcs $(LIBRARY) $(OBJS)
-
 %.o: %.cpp
-	$(DPCPP) $(DPCPPFLAGS) -I../../include -c $<
+	$(DPCPP) $(DPCPPFLAGS) -c $< -o $@ -I../../include
+
+$(LIBRARY): $(OBJECTS)
+	ar rcs $@ $^
 
 clean:
-	rm -rf *.o
+	rm -r *.o $(LIBRARY)
 

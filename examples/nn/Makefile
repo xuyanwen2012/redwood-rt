@@ -1,21 +1,17 @@
 include ../../Makefile.inc
 
-CUDA_LIB := ../../accelerator/cuda/libcuda.a
-SYCL_LIB := ../../accelerator/sycl/libsycl.a
+REDWOOD_CUDA_LIB := -L ../../accelerator/cuda -lredwoodcuda
 
 SOURCES = $(wildcard *.cpp)
 OBJECTS = $(SOURCES:.cpp=.o)
 
-all: cuda sycl
-
-%.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c $(SOURCES) -I../../include
+all: cuda
 
 cuda: $(OBJECTS)
-	$(CXX) -o  cuda.out $(OBJECTS) $(CUDA_LIB) -L/usr/local/cuda/lib64 -lcudart
+	$(CXX) -o cuda.out $(OBJECTS) $(REDWOOD_CUDA_LIB) -L /usr/local/cuda/lib64 -lcudart
 
-sycl: $(OBJECTS)
-	clang++ -fsycl -o sycl.out $(OBJECTS) $(SYCL_LIB) -L$(SYCL_LIB_DIR) -lsycl
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c $(SOURCES) -I ../../include
 
 clean:
-	rm -f $(OBJECTS) *.out
+	rm -f $(OBJECTS) *.out 

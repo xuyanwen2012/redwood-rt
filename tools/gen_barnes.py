@@ -11,5 +11,5 @@ w_values = np.ones((num_points, 1), dtype=np.float32)
 points = np.hstack((points, w_values))
 
 # Write the points to a binary file
-with open("../examples/data/input_bh_2m_4f.dat", "wb") as f:
+with open("../data/input_bh_2m_4f.dat", "wb") as f:
     f.write(points.tobytes())
