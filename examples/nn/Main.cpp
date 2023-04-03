@@ -83,7 +83,6 @@ int main(int argc, char** argv) {
 
   // Debug Settings
   final_results1.resize(app_params.m);
-  final_results2.resize(app_params.m);
 
   // Init
   rdc::Init(app_params.batch_size);

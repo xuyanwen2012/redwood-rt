@@ -1,0 +1,245 @@
+#include <omp.h>
+
+#include <algorithm>
+#include <cassert>
+// #include <cmath>
+// #include <cstddef>
+// #include <cstdlib>
+#include <iostream>
+#include <limits>
+#include <memory>
+#include <numeric>
+#include <queue>
+#include <random>
+#include <vector>
+
+#include "../LoadFile.hpp"
+#include "../Utils.hpp"
+#include "../cxxopts.hpp"
+#include "../nn/AppParams.hpp"
+#include "../nn/Executor.hpp"
+#include "../nn/GlobalVars.hpp"
+#include "../nn/KDTree.hpp"
+#include "Functors/DistanceMetrics.hpp"
+#include "ReducerHandler.hpp"
+#include "Redwood.hpp"
+
+_NODISCARD Point4F RandPoint() {
+  Point4F p;
+  p.data[0] = MyRand(0, 1024);
+  p.data[1] = MyRand(0, 1024);
+  p.data[2] = MyRand(0, 1024);
+  p.data[3] = MyRand(0, 1024);
+  return p;
+}
+
+int main(int argc, char** argv) {
+  cxxopts::Options options("Nearest Neighbor (NN)",
+                           "Redwood NN demo implementation");
+  options.add_options()("f,file", "File name", cxxopts::value<std::string>())(
+      "q,query", "Num to Query",
+      cxxopts::value<int>()->default_value("1048576"))(
+      "p,thread", "Num Thread", cxxopts::value<int>()->default_value("1"))(
+      "l,leaf", "Leaf node size", cxxopts::value<int>()->default_value("32"))(
+      "b,batch_size", "Batch Size",
+      cxxopts::value<int>()->default_value("1024"))(
+      "c,cpu", "Enable Cpu Baseline",
+      cxxopts::value<bool>()->default_value("false"))("h,help", "Print usage");
+
+  options.parse_positional({"file", "query"});
+
+  const auto result = options.parse(argc, argv);
+
+  if (result.count("help")) {
+    std::cout << options.help() << std::endl;
+    exit(EXIT_SUCCESS);
+  }
+
+  if (!result.count("file")) {
+    std::cerr << "requires an input file (\"data/input_nn_1m_4f.dat\")\n";
+    std::cout << options.help() << std::endl;
+    exit(EXIT_FAILURE);
+  }
+
+  const auto data_file = result["file"].as<std::string>();
+  app_params.max_leaf_size = result["leaf"].as<int>();
+  app_params.m = result["query"].as<int>();
+  app_params.batch_size = result["batch_size"].as<int>();
+  app_params.num_threads = result["thread"].as<int>();
+  app_params.cpu = result["cpu"].as<bool>();
+  std::cout << app_params << std::endl;
+
+  std::cout << "Loading Data..." << std::endl;
+
+  const auto in_data = load_data_from_file<Point4F>(data_file);
+  const auto n = in_data.size();
+
+  // For each thread
+  std::vector<std::queue<Task>> q_data(app_params.num_threads);
+  const auto tasks_per_thread = app_params.m / app_params.num_threads;
+  for (int tid = 0; tid < app_params.num_threads; ++tid) {
+    for (int i = 0; i < tasks_per_thread; ++i) {
+      q_data[tid].emplace(i, RandPoint());
+    }
+  }
+
+  std::cout << "Building kd Tree..." << std::endl;
+
+  const kdt::KdtParams params{app_params.max_leaf_size};
+  tree_ref = std::make_shared<kdt::KdTree>(params, in_data.data(), n);
+
+  const auto num_leaf_nodes = tree_ref->GetStats().num_leaf_nodes;
+  auto lnt_addr = rdc::AllocateLnt(num_leaf_nodes, app_params.max_leaf_size);
+  tree_ref->LoadPayload(lnt_addr);
+
+  // Debug Settings
+  final_results1.resize(app_params.m);
+
+  // Init
+  rdc::Init(app_params.batch_size);
+  omp_set_num_threads(app_params.num_threads);
+
+  if (app_params.cpu) {
+    TimeTask("CPU Traversal", [&] {
+      // Setup cpu executors
+      std::vector<Executor<dist::Euclidean>> cpu_exe;
+      for (int tid = 0; tid < app_params.num_threads; ++tid) {
+        cpu_exe.emplace_back(tid, 0, 0);
+      }
+
+      // Run
+#pragma omp parallel for
+      for (int tid = 0; tid < app_params.num_threads; ++tid) {
+        while (!q_data[tid].empty()) {
+          cpu_exe[tid].SetQuery(q_data[tid].front());
+          cpu_exe[tid].CpuTraverse();
+          q_data[tid].pop();
+        }
+      }
+    });
+  } else {
+    // Use Redwood
+    constexpr auto num_streams = 2;
+    constexpr auto tid = 0;
+
+    std::vector<Executor<dist::Euclidean>> exes;
+    exes.reserve(app_params.num_threads * num_streams * app_params.batch_size);
+    for (int tid = 0; tid < app_params.num_threads; ++tid) {
+      for (int stream_id = 0; stream_id < num_streams; ++stream_id) {
+        for (int i = 0; i < app_params.batch_size; ++i) {
+          exes.emplace_back(tid, stream_id, i);
+        }
+      }
+    }
+
+    // exe[4][2][1024]
+    const auto tid_offset = num_streams * app_params.batch_size;
+    const auto stream_offset = app_params.batch_size;
+
+#pragma omp parallel for
+    for (int tid = 0; tid < app_params.num_threads; ++tid) {
+      auto cur_stream = 0;
+      while (!q_data[tid].empty()) {
+        auto it = tid * tid_offset + cur_stream * stream_offset;
+        const auto it_end = it + app_params.batch_size;
+        for (; it != it_end;) {
+          if (exes[it].Finished()) {
+            if (!q_data[tid].empty()) {
+              const auto q = q_data[tid].front();
+              q_data[tid].pop();
+
+              exes[it].SetQuery(q);
+              exes[it].StartQuery();
+            }
+
+            ++it;
+          } else {
+            exes[it].Resume();
+            if (exes[it].Finished()) {
+              // Do not increment , let the same executor (it) take another task
+            } else {
+              ++it;
+            }
+          }
+        }
+
+        rdc::LaunchAsyncWorkQueue(tid, cur_stream);
+
+        // switch to next
+        cur_stream = (cur_stream + 1) % num_streams;
+
+        redwood::DeviceStreamSynchronize(cur_stream);
+        rdc::ResetBuffer(tid, cur_stream);
+      }
+    }
+
+    // std::vector<Executor<dist::Euclidean>> exes[num_streams];
+
+    // for (int stream_id = 0; stream_id < num_streams; ++stream_id) {
+    //   exes[stream_id].reserve(app_params.batch_size);
+    //   for (int i = 0; i < app_params.batch_size; ++i) {
+    //     exes[stream_id].emplace_back(tid, stream_id, i);
+    //   }
+    // }
+
+    // const auto t0 = std::chrono::high_resolution_clock::now();
+
+    // auto cur_stream = 0;
+    // while (!q_data.empty()) {
+    //   for (auto it = exes[cur_stream].begin(); it !=
+    //   exes[cur_stream].end();)
+    //   {
+    //     if (it->Finished()) {
+    //       if (!q_data.empty()) {
+    //         const auto q = q_data.front();
+    //         q_data.pop();
+
+    //         it->SetQuery(q);
+    //         it->StartQuery();
+    //       }
+
+    //       ++it;
+    //     } else {
+    //       it->Resume();
+    //       if (it->Finished()) {
+    //         // Do not increment , let the same executor (it) take another
+    //         task
+    //       } else {
+    //         ++it;
+    //       }
+    //     }
+    //   }
+
+    //   rdc::LaunchAsyncWorkQueue(cur_stream);
+
+    //   // switch to next
+    //   cur_stream = (cur_stream + 1) % num_streams;
+
+    //   redwood::DeviceStreamSynchronize(cur_stream);
+    //   rdc::ResetBuffer(tid, cur_stream);
+    // }
+
+    // redwood::DeviceSynchronize();
+
+    // const auto t1 = std::chrono::high_resolution_clock::now();
+
+    // for (int i = 0; i < num_streams; ++i) {
+    //   for (auto& ex : exes[cur_stream]) {
+    //     ex.CpuTraverse();
+    //   }
+    //   cur_stream = (cur_stream + 1) % num_streams;
+    // }
+
+    // const auto t2 = std::chrono::high_resolution_clock::now();
+    // const auto time_span1 =
+    //     std::chrono::duration_cast<std::chrono::duration<float>>(t1 - t0);
+    // const auto time_span2 =
+    //     std::chrono::duration_cast<std::chrono::duration<float>>(t2 - t0);
+    // std::cout << "Finished "
+    //           << "! Time took: " << time_span1.count() << "s. "
+    //           << time_span2.count() << "s. " << std::endl;
+  }
+
+  rdc::Release();
+  return EXIT_SUCCESS;
+}

@@ -19,7 +19,7 @@ struct CallStackField {
 template <typename Functor>
 class Executor {
  public:
-  Executor() = delete;
+  // Executor() = delete;
 
   // Thread id, i.e., [0, .., n_threads]
   // Stream id in the thread, i.e., [0, 1]
@@ -172,7 +172,8 @@ class Executor {
   ExecutionState state_;
 
   // Store some reference used
-  const int my_tid_;
-  const int my_stream_id_;
-  const int my_uid_;
+  // const
+  int my_tid_;
+  int my_stream_id_;
+  int my_uid_;
 };

@@ -3,8 +3,8 @@
 #include <array>
 
 #include "../Utils.hpp"
+#include "../nn/KnnSet.hpp"
 #include "Functors/DistanceMetrics.hpp"
-#include "KnnSet.hpp"
 #include "Redwood/Kernel.hpp"
 #include "Redwood/Point.hpp"
 
@@ -70,8 +70,11 @@ struct ResultBuffer {
   int stored_k;
 };
 
-inline std::array<Buffer, 2> buffers;
-inline std::array<ResultBuffer, 2> result_addr;
+// inline std::array<Buffer, 2> buffers;
+// inline std::array<ResultBuffer, 2> result_addr;
+
+// buffers[thread_id][stream_id]
+inline std::vector<std::array<Buffer, 2>> buffers;
 
 inline void Init(const int batch_size) {
   redwood::Init();
