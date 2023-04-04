@@ -8,6 +8,7 @@ struct AppParams {
   int batch_size;
   int num_threads;
   int m;
+  float theta;
   bool cpu;
 };
 
@@ -19,6 +20,7 @@ inline std::ostream& operator<<(std::ostream& os, const AppParams& params) {
   os << "\tBatch Size: " << params.batch_size << '\n';
   os << "\tNum Threads: " << params.num_threads << '\n';
   os << "\tM: " << params.m << '\n';
+  os << "\tTheta: " << params.theta << '\n';
   os << "\tRunning Cpu: " << std::boolalpha << params.cpu << '\n';
   return os;
 }

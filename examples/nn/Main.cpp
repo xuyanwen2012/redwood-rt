@@ -55,7 +55,8 @@ int main(int argc, char** argv) {
   }
 
   if (!result.count("file")) {
-    std::cerr << "requires an input file (\"data/input_nn_1m_4f.dat\")\n";
+    std::cerr
+        << "requires an input file (\"../../data/1m_nn_uniform_4f.dat\")\n";
     std::cout << options.help() << std::endl;
     exit(EXIT_FAILURE);
   }
