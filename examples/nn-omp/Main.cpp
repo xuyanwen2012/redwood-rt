@@ -42,7 +42,6 @@ int main(int argc, char** argv) {
     ("l,leaf", "Maximum leaf node size", cxxopts::value<int>()->default_value("32"))
     ("b,batch_size", "Batch size (GPU)", cxxopts::value<int>()->default_value("1024"))
     ("c,cpu", "Enable CPU baseline", cxxopts::value<bool>()->default_value("false"))
-    ("d,dump", "Dump result to a tem file", cxxopts::value<bool>()->default_value("false"))
     ("h,help", "Print usage");
   // clang-format on
 
@@ -67,7 +66,6 @@ int main(int argc, char** argv) {
   app_params.max_leaf_size = result["leaf"].as<int>();
   app_params.batch_size = result["batch_size"].as<int>();
   app_params.cpu = result["cpu"].as<bool>();
-  app_params.dump = result["dump"].as<bool>();
   std::cout << app_params << std::endl;
 
   std::cout << "Loading Data..." << std::endl;
@@ -192,10 +190,6 @@ int main(int argc, char** argv) {
     std::cout << final_results1[i] << '\n';
   }
   std::cout << "..." << std::endl;
-
-  if (app_params.dump) {
-    DumpFile<float>(final_results1, app_params.cpu);
-  }
 
   rdc::Release();
   return EXIT_SUCCESS;
