@@ -89,17 +89,14 @@ int main(int argc, char** argv) {
   auto lnt_addr = rdc::AllocateLnt(num_leaf_nodes, app_params.max_leaf_size);
   tree_ref->LoadPayload(lnt_addr);
 
-  // Debug Settings
-  final_results1.resize(app_params.m);
-
   // Init
   rdc::Init(app_params.num_threads, app_params.batch_size);
   omp_set_num_threads(app_params.num_threads);
-  std::cout << "Starting Traversal..." << std::endl;
+  final_results1.resize(app_params.m);
 
+  std::cout << "Starting Traversal..." << std::endl;
   if (app_params.cpu) {
     TimeTask("CPU Traversal", [&] {
-      // Setup cpu executors
       std::vector<Executor<dist::Euclidean>> cpu_exe;
       for (int tid = 0; tid < app_params.num_threads; ++tid) {
         cpu_exe.emplace_back(tid, 0, 0);
@@ -109,15 +106,18 @@ int main(int argc, char** argv) {
 #pragma omp parallel for
       for (int tid = 0; tid < app_params.num_threads; ++tid) {
         while (!q_data[tid].empty()) {
-          cpu_exe[tid].SetQuery(q_data[tid].front());
-          cpu_exe[tid].CpuTraverse();
+          const auto task = q_data[tid].front();
+          cpu_exe[tid].SetQuery(task);
+          final_results1[task.first] = cpu_exe[tid].CpuTraverse();
           q_data[tid].pop();
         }
       }
     });
+
   } else {
     // Use Redwood
     constexpr auto num_streams = 2;
+    final_results1.resize(app_params.m);
 
     // Setup traversers
     std::vector<Executor<dist::Euclidean>> exes;
@@ -179,13 +179,20 @@ int main(int argc, char** argv) {
           auto it = tid * tid_offset + cur_stream * stream_offset;
           const auto it_end = it + app_params.batch_size;
           for (; it != it_end; ++it) {
-            exes[it].CpuTraverse();
+            const auto q_idx = exes[it].my_task_.first;
+            final_results1[q_idx] = exes[it].CpuTraverse();
           }
         }
       }
     });
   }
-  std::cout << "Program Execution Completed No Error." << std::endl;
+  std::cout << "Program Execution Completed. " << std::endl;
+
+  // Peek results
+  for (int i = 0; i < 5; ++i) {
+    std::cout << final_results1[i] << '\n';
+  }
+  std::cout << "..." << std::endl;
 
   rdc::Release();
   return EXIT_SUCCESS;

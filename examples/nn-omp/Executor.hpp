@@ -46,12 +46,10 @@ class Executor {
 
   void Resume() { Execute(); }
 
-  void CpuTraverse() {
+  _NODISCARD float CpuTraverse() {
     result_set->Reset();
-
     TraversalRecursive(tree_ref->root_);
-
-    final_results1[my_task_.first] = result_set->WorstDist();
+    return result_set->WorstDist();
   }
 
  protected:
