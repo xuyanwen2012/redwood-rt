@@ -121,7 +121,6 @@ int main(int argc, char** argv) {
   } else {
     // Use Redwood
     constexpr auto num_streams = 2;
-    final_results1.resize(app_params.m);
 
     // Setup traversers
     std::vector<Executor<dist::Euclidean>> exes;
@@ -178,15 +177,11 @@ int main(int argc, char** argv) {
 
       redwood::DeviceSynchronize();
 
-      for (int tid = 0; tid < app_params.num_threads; ++tid) {
-        for (int cur_stream = 0; cur_stream < num_streams; ++cur_stream) {
-          auto it = tid * tid_offset + cur_stream * stream_offset;
-          const auto it_end = it + app_params.batch_size;
-          for (; it != it_end; ++it) {
-            const auto q_idx = exes[it].my_task_.first;
-            final_results1[q_idx] = exes[it].CpuTraverse();
-          }
-        }
+      const auto left =
+          app_params.num_threads * num_streams * app_params.batch_size;
+      for (int i = 0; i < left; ++i) {
+        const auto q_idx = exes[i].my_task_.first;
+        final_results1[q_idx] = exes[i].CpuTraverse();
       }
     });
   }
