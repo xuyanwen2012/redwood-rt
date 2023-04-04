@@ -15,12 +15,10 @@ struct CallStackField {
   kdt::Dir dir;
 };
 
-// Knn Algorithm
+// Nn/Knn Algorithm
 template <typename Functor>
 class Executor {
  public:
-  Executor() = delete;
-
   // Thread id, i.e., [0, .., n_threads]
   // Stream id in the thread, i.e., [0, 1]
   // My id in the group executor, i.e., [0,...,1023]
@@ -31,7 +29,7 @@ class Executor {
         my_stream_id_(stream_id),
         my_uid_(uid) {
     stack_.reserve(16);
-    my_assigned_result_addr = rdc::RequestResultAddr(stream_id, uid);
+    my_assigned_result_addr = rdc::RequestResultAddr(tid, stream_id, uid);
   }
 
   _NODISCARD bool Finished() const {
@@ -48,12 +46,10 @@ class Executor {
 
   void Resume() { Execute(); }
 
-  void CpuTraverse() {
+  _NODISCARD float CpuTraverse() {
     result_set->Reset();
-
     TraversalRecursive(tree_ref->root_);
-
-    final_results1[my_task_.first] = result_set->WorstDist();
+    return result_set->WorstDist();
   }
 
  protected:
@@ -71,7 +67,7 @@ class Executor {
         if (cur_->IsLeaf()) {
           // **** Reduction at Leaf Node (replaced with Redwood API) ****
 
-          rdc::ReduceLeafNode(my_stream_id_, my_task_, cur_->uid);
+          rdc::ReduceLeafNode(my_tid_, my_stream_id_, my_task_, cur_->uid);
 
           // **** Coroutine Reuturn (API) ****
           return;
@@ -171,8 +167,8 @@ class Executor {
   kdt::Node* cur_;
   ExecutionState state_;
 
-  // Store some reference used
-  const int my_tid_;
-  const int my_stream_id_;
-  const int my_uid_;
+  // Store some reference used (const)
+  int my_tid_;
+  int my_stream_id_;
+  int my_uid_;
 };

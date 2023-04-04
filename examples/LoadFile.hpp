@@ -5,8 +5,10 @@
 #include <iostream>
 #include <vector>
 
+#include "Utils.hpp"
+
 template <typename T>
-std::vector<T> load_data_from_file(const std::string& filename) {
+_NODISCARD std::vector<T> load_data_from_file(const std::string& filename) {
   std::ifstream infile(filename, std::ios::binary);
   if (!infile.is_open()) {
     throw std::runtime_error("Failed to open file: " + filename);
@@ -28,8 +30,20 @@ std::vector<T> load_data_from_file(const std::string& filename) {
 }
 
 template <typename T>
-std::vector<T> read_floats_from_file(const std::string& filename, const int n,
-                                     const int m) {
+void DumpFile(const std::vector<T>& data, const bool is_cpu) {
+  std::ofstream outfile(is_cpu ? "output_c.txt" : "output.txt");
+
+  if (outfile.is_open()) {
+    for (const auto& element : data) {
+      outfile << element << '\n';
+    }
+    outfile.close();
+  }
+}
+
+template <typename T>
+_NODISCARD std::vector<T> read_floats_from_file(const std::string& filename,
+                                                const int n, const int m) {
   std::vector<T> in_data(n);
   std::vector<T> q_data(m);
 
