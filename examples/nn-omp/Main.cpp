@@ -2,9 +2,6 @@
 
 #include <algorithm>
 #include <cassert>
-// #include <cmath>
-// #include <cstddef>
-// #include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -17,14 +14,14 @@
 #include "../Utils.hpp"
 #include "../cxxopts.hpp"
 #include "../nn/AppParams.hpp"
-#include "../nn/Executor.hpp"
 #include "../nn/GlobalVars.hpp"
 #include "../nn/KDTree.hpp"
+#include "Executor.hpp"
 #include "Functors/DistanceMetrics.hpp"
 #include "ReducerHandler.hpp"
 #include "Redwood.hpp"
 
-_NODISCARD Point4F RandPoint() {
+_NODISCARD inline Point4F RandPoint() {
   Point4F p;
   p.data[0] = MyRand(0, 1024);
   p.data[1] = MyRand(0, 1024);
@@ -96,8 +93,9 @@ int main(int argc, char** argv) {
   final_results1.resize(app_params.m);
 
   // Init
-  rdc::Init(app_params.batch_size);
+  rdc::Init(app_params.num_threads, app_params.batch_size);
   omp_set_num_threads(app_params.num_threads);
+  std::cout << "Starting Traversal..." << std::endl;
 
   if (app_params.cpu) {
     TimeTask("CPU Traversal", [&] {
@@ -120,8 +118,8 @@ int main(int argc, char** argv) {
   } else {
     // Use Redwood
     constexpr auto num_streams = 2;
-    constexpr auto tid = 0;
 
+    // Setup traversers
     std::vector<Executor<dist::Euclidean>> exes;
     exes.reserve(app_params.num_threads * num_streams * app_params.batch_size);
     for (int tid = 0; tid < app_params.num_threads; ++tid) {
@@ -136,109 +134,58 @@ int main(int argc, char** argv) {
     const auto tid_offset = num_streams * app_params.batch_size;
     const auto stream_offset = app_params.batch_size;
 
+    TimeTask("GPU Traversal", [&] {
 #pragma omp parallel for
-    for (int tid = 0; tid < app_params.num_threads; ++tid) {
-      auto cur_stream = 0;
-      while (!q_data[tid].empty()) {
-        auto it = tid * tid_offset + cur_stream * stream_offset;
-        const auto it_end = it + app_params.batch_size;
-        for (; it != it_end;) {
-          if (exes[it].Finished()) {
-            if (!q_data[tid].empty()) {
-              const auto q = q_data[tid].front();
-              q_data[tid].pop();
-
-              exes[it].SetQuery(q);
-              exes[it].StartQuery();
-            }
-
-            ++it;
-          } else {
-            exes[it].Resume();
+      for (int tid = 0; tid < app_params.num_threads; ++tid) {
+        auto cur_stream = 0;
+        while (!q_data[tid].empty()) {
+          auto it = tid * tid_offset + cur_stream * stream_offset;
+          const auto it_end = it + app_params.batch_size;
+          for (; it != it_end;) {
             if (exes[it].Finished()) {
-              // Do not increment , let the same executor (it) take another task
-            } else {
+              if (!q_data[tid].empty()) {
+                const auto q = q_data[tid].front();
+                q_data[tid].pop();
+
+                exes[it].SetQuery(q);
+                exes[it].StartQuery();
+              }
+
               ++it;
+            } else {
+              exes[it].Resume();
+              if (exes[it].Finished()) {
+                // Do not increment 'it'
+              } else {
+                ++it;
+              }
             }
           }
+
+          rdc::LaunchAsyncWorkQueue(tid, cur_stream);
+
+          // switch to next
+          cur_stream = (cur_stream + 1) % num_streams;
+
+          redwood::DeviceStreamSynchronize(tid, cur_stream);
+          rdc::ResetBuffer(tid, cur_stream);
         }
-
-        rdc::LaunchAsyncWorkQueue(tid, cur_stream);
-
-        // switch to next
-        cur_stream = (cur_stream + 1) % num_streams;
-
-        redwood::DeviceStreamSynchronize(cur_stream);
-        rdc::ResetBuffer(tid, cur_stream);
       }
-    }
 
-    // std::vector<Executor<dist::Euclidean>> exes[num_streams];
+      redwood::DeviceSynchronize();
 
-    // for (int stream_id = 0; stream_id < num_streams; ++stream_id) {
-    //   exes[stream_id].reserve(app_params.batch_size);
-    //   for (int i = 0; i < app_params.batch_size; ++i) {
-    //     exes[stream_id].emplace_back(tid, stream_id, i);
-    //   }
-    // }
-
-    // const auto t0 = std::chrono::high_resolution_clock::now();
-
-    // auto cur_stream = 0;
-    // while (!q_data.empty()) {
-    //   for (auto it = exes[cur_stream].begin(); it !=
-    //   exes[cur_stream].end();)
-    //   {
-    //     if (it->Finished()) {
-    //       if (!q_data.empty()) {
-    //         const auto q = q_data.front();
-    //         q_data.pop();
-
-    //         it->SetQuery(q);
-    //         it->StartQuery();
-    //       }
-
-    //       ++it;
-    //     } else {
-    //       it->Resume();
-    //       if (it->Finished()) {
-    //         // Do not increment , let the same executor (it) take another
-    //         task
-    //       } else {
-    //         ++it;
-    //       }
-    //     }
-    //   }
-
-    //   rdc::LaunchAsyncWorkQueue(cur_stream);
-
-    //   // switch to next
-    //   cur_stream = (cur_stream + 1) % num_streams;
-
-    //   redwood::DeviceStreamSynchronize(cur_stream);
-    //   rdc::ResetBuffer(tid, cur_stream);
-    // }
-
-    // redwood::DeviceSynchronize();
-
-    // const auto t1 = std::chrono::high_resolution_clock::now();
-
-    // for (int i = 0; i < num_streams; ++i) {
-    //   for (auto& ex : exes[cur_stream]) {
-    //     ex.CpuTraverse();
-    //   }
-    //   cur_stream = (cur_stream + 1) % num_streams;
-    // }
-
-    // const auto t2 = std::chrono::high_resolution_clock::now();
-    // const auto time_span1 =
-    //     std::chrono::duration_cast<std::chrono::duration<float>>(t1 - t0);
-    // const auto time_span2 =
-    //     std::chrono::duration_cast<std::chrono::duration<float>>(t2 - t0);
-    // std::cout << "Finished "
-    //           << "! Time took: " << time_span1.count() << "s. "
-    //           << time_span2.count() << "s. " << std::endl;
+      for (int tid = 0; tid < app_params.num_threads; ++tid) {
+        for (int cur_stream = 0; cur_stream < num_streams; ++cur_stream) {
+          auto it = tid * tid_offset + cur_stream * stream_offset;
+          const auto it_end = it + app_params.batch_size;
+          for (; it != it_end; ++it) {
+            exes[it].CpuTraverse();
+          }
+        }
+      }
+    });
   }
+  std::cout << "Program Execution Completed No Error." << std::endl;
 
   rdc::Release();
   return EXIT_SUCCESS;

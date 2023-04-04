@@ -11,7 +11,7 @@ struct AppParams {
   bool cpu;
 };
 
-std::ostream& operator<<(std::ostream& os, const AppParams& params) {
+inline std::ostream& operator<<(std::ostream& os, const AppParams& params) {
   os << "Application Parameters:\n";
   os << "\tMax Leaf Size: " << params.max_leaf_size << '\n';
   os << "\tBatch Size: " << params.batch_size << '\n';
