@@ -12,6 +12,8 @@ struct AppParams {
   bool dump;
 };
 
+inline AppParams app_params;
+
 inline std::ostream& operator<<(std::ostream& os, const AppParams& params) {
   os << "Application Parameters:\n";
   os << "\tMax Leaf Size: " << params.max_leaf_size << '\n';
@@ -22,5 +24,3 @@ inline std::ostream& operator<<(std::ostream& os, const AppParams& params) {
   os << "\tDump file: " << std::boolalpha << params.dump << '\n';
   return os;
 }
-
-inline AppParams app_params;

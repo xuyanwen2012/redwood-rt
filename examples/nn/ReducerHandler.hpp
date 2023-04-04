@@ -5,14 +5,13 @@
 #include "../Utils.hpp"
 #include "Functors/DistanceMetrics.hpp"
 #include "KnnSet.hpp"
-#include "Redwood/Kernel.hpp"
-#include "Redwood/Point.hpp"
+#include "Redwood.hpp"
 
 using Task = std::pair<int, Point4F>;
 
-#include "Redwood.hpp"
-
 namespace rdc {
+
+// Shared accross threads, streams.
 inline Point4F* lnt_base_addr = nullptr;
 inline int stored_max_leaf_size;
 
@@ -70,43 +69,51 @@ struct ResultBuffer {
   int stored_k;
 };
 
-inline std::array<Buffer, 2> buffers;
-inline std::array<ResultBuffer, 2> result_addr;
+inline int stored_num_threads;
+inline std::vector<std::array<Buffer, 2>> buffers;
+inline std::vector<std::array<ResultBuffer, 2>> result_addr;
 
-inline void Init(const int batch_size) {
-  redwood::Init();
+inline void Init(const int num_thread, const int batch_size) {
+  redwood::Init(num_thread);
+  stored_num_threads = num_thread;
 
-  for (int i = 0; i < 2; ++i) {
-    buffers[i].Alloc(batch_size);
-    result_addr[i].Alloc(batch_size);
+  buffers.resize(num_thread);
+  result_addr.resize(num_thread);
+  for (int tid = 0; tid < num_thread; ++tid) {
+    for (int i = 0; i < 2; ++i) {
+      buffers[tid][i].Alloc(batch_size);
+      result_addr[tid][i].Alloc(batch_size);
 
-    redwood::AttachStreamMem(i, buffers[i].u_leaf_idx);
-    redwood::AttachStreamMem(i, buffers[i].u_qs);
-    redwood::AttachStreamMem(i, result_addr[i].underlying_dat);
+      redwood::AttachStreamMem(tid, i, buffers[tid][i].u_leaf_idx);
+      redwood::AttachStreamMem(tid, i, buffers[tid][i].u_qs);
+      redwood::AttachStreamMem(tid, i, result_addr[tid][i].underlying_dat);
+    }
   }
 }
 
 inline void Release() {
-  for (int i = 0; i < 2; ++i) {
-    buffers[i].DeAlloc();
-    result_addr[i].DeAlloc();
+  for (int tid = 0; tid < stored_num_threads; ++tid) {
+    for (int i = 0; i < 2; ++i) {
+      buffers[tid][i].DeAlloc();
+      result_addr[tid][i].DeAlloc();
+    }
   }
 
   redwood::UsmFree(lnt_base_addr);
 }
 
 inline void ResetBuffer(const int tid, const int cur_stream) {
-  buffers[cur_stream].Reset();
+  buffers[tid][cur_stream].Reset();
 }
 
-_NODISCARD inline float* RequestResultAddr(const int stream_id,
+_NODISCARD inline float* RequestResultAddr(const int tid, const int stream_id,
                                            const int executor_index) {
-  return result_addr[stream_id].GetAddrAt(executor_index);
+  return result_addr[tid][stream_id].GetAddrAt(executor_index);
 }
 
-inline void ReduceLeafNode(const int stream_id, const Task& task,
+inline void ReduceLeafNode(const int tid, const int stream_id, const Task& task,
                            const int node_idx) {
-  buffers[stream_id].Push(task, node_idx);
+  buffers[tid][stream_id].Push(task, node_idx);
 }
 
 inline void DebugCpuReduction(const Buffer& buf, const dist::Euclidean functor,
@@ -129,20 +136,19 @@ inline void DebugCpuReduction(const Buffer& buf, const dist::Euclidean functor,
 }
 
 inline void LaunchAsyncWorkQueue(const int tid, const int stream_id) {
-  const auto num_active = buffers[stream_id].Size();
+  const auto num_active = buffers[tid][stream_id].Size();
 
   if constexpr (kDebugMod) {
     std::cout << "rdc::LaunchAsyncWorkQueue "
               << "tid: " << tid << ", stream: " << stream_id << ", "
-              << buffers[stream_id].Size() << " actives." << std::endl;
-
+              << buffers[tid][stream_id].Size() << " actives." << std::endl;
     // 128? 256?
   }
 
   dist::Euclidean functor{};
   redwood::NearestNeighborKernel(
-      stream_id, lnt_base_addr, stored_max_leaf_size, buffers[stream_id].u_qs,
-      buffers[stream_id].u_leaf_idx, num_active,
-      result_addr[stream_id].underlying_dat, functor);
+      tid, stream_id, lnt_base_addr, stored_max_leaf_size,
+      buffers[tid][stream_id].u_qs, buffers[tid][stream_id].u_leaf_idx,
+      num_active, result_addr[tid][stream_id].underlying_dat, functor);
 }
 }  // namespace rdc

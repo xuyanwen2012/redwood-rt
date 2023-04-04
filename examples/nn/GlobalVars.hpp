@@ -11,9 +11,7 @@ inline std::shared_ptr<kdt::KdTree> tree_ref;
 
 // Debug
 // inline std::vector<std::vector<int>> leaf_node_visited1;
-// inline std::vector<std::vector<int>> leaf_node_visited2;
 inline std::vector<float> final_results1;
-// inline std::vector<float> final_results2;
 
 inline void PrintLeafNodeVisited(const std::vector<std::vector<int>>& d,
                                  size_t n) {
