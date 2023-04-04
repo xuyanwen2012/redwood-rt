@@ -9,6 +9,7 @@ struct AppParams {
   int num_threads;
   int m;
   bool cpu;
+  bool dump;
 };
 
 inline std::ostream& operator<<(std::ostream& os, const AppParams& params) {
@@ -18,6 +19,7 @@ inline std::ostream& operator<<(std::ostream& os, const AppParams& params) {
   os << "\tNum Threads: " << params.num_threads << '\n';
   os << "\tM: " << params.m << '\n';
   os << "\tRunning Cpu: " << std::boolalpha << params.cpu << '\n';
+  os << "\tDump file: " << std::boolalpha << params.dump << '\n';
   return os;
 }
 

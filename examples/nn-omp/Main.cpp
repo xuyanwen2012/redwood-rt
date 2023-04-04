@@ -33,15 +33,18 @@ _NODISCARD inline Point4F RandPoint() {
 int main(int argc, char** argv) {
   cxxopts::Options options("Nearest Neighbor (NN)",
                            "Redwood NN demo implementation");
-  options.add_options()("f,file", "File name", cxxopts::value<std::string>())(
-      "q,query", "Num to Query",
-      cxxopts::value<int>()->default_value("1048576"))(
-      "p,thread", "Num Thread", cxxopts::value<int>()->default_value("1"))(
-      "l,leaf", "Leaf node size", cxxopts::value<int>()->default_value("32"))(
-      "b,batch_size", "Batch Size",
-      cxxopts::value<int>()->default_value("1024"))(
-      "c,cpu", "Enable Cpu Baseline",
-      cxxopts::value<bool>()->default_value("false"))("h,help", "Print usage");
+
+  // clang-format off
+  options.add_options()
+    ("f,file", "Input file name", cxxopts::value<std::string>())
+    ("m,query", "Number of particles to query", cxxopts::value<int>()->default_value("1048576"))
+    ("t,thread", "Number of threads", cxxopts::value<int>()->default_value("1"))
+    ("l,leaf", "Maximum leaf node size", cxxopts::value<int>()->default_value("32"))
+    ("b,batch_size", "Batch size (GPU)", cxxopts::value<int>()->default_value("1024"))
+    ("c,cpu", "Enable CPU baseline", cxxopts::value<bool>()->default_value("false"))
+    ("d,dump", "Dump result to a tem file", cxxopts::value<bool>()->default_value("false"))
+    ("h,help", "Print usage");
+  // clang-format on
 
   options.parse_positional({"file", "query"});
 
@@ -59,11 +62,12 @@ int main(int argc, char** argv) {
   }
 
   const auto data_file = result["file"].as<std::string>();
-  app_params.max_leaf_size = result["leaf"].as<int>();
   app_params.m = result["query"].as<int>();
-  app_params.batch_size = result["batch_size"].as<int>();
   app_params.num_threads = result["thread"].as<int>();
+  app_params.max_leaf_size = result["leaf"].as<int>();
+  app_params.batch_size = result["batch_size"].as<int>();
   app_params.cpu = result["cpu"].as<bool>();
+  app_params.dump = result["dump"].as<bool>();
   std::cout << app_params << std::endl;
 
   std::cout << "Loading Data..." << std::endl;
@@ -193,6 +197,10 @@ int main(int argc, char** argv) {
     std::cout << final_results1[i] << '\n';
   }
   std::cout << "..." << std::endl;
+
+  if (app_params.dump) {
+    DumpFile<float>(final_results1, app_params.cpu);
+  }
 
   rdc::Release();
   return EXIT_SUCCESS;
