@@ -59,3 +59,10 @@ https://github.com/angl-dev/gem5-duet/tree/Yanwen
 ### Misc
 
 `/usr/local/llvm-14.0/bin/clang-format`
+
+## Some workloads lives in another repository
+
+https://github.com/xuyanwen2012/redwood
+
+
+
