@@ -4,6 +4,9 @@
 
 Working on Documentation Now, instructions coming soon
 
+Old SYCL backend was in https://github.com/xuyanwen2012/new-redwood
+Old CUDA backend was in https://github.com/xuyanwen2012/redwood
+
 ## Getting Started
 
 ### Compile Backends
@@ -62,7 +65,6 @@ https://github.com/angl-dev/gem5-duet/tree/Yanwen
 
 ## Some workloads lives in another repository
 
-https://github.com/xuyanwen2012/redwood
 
 
 
