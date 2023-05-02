@@ -17,7 +17,7 @@ template <typename T>
 struct DataRange{
   int start;
   int end;
-}
+};
 // For oct tree the bounding box is always 3D
 template <typename T>
 struct BoundingBox {

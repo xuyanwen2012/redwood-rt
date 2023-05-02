@@ -17,6 +17,7 @@
 
 using Task = std::pair<int, Point4F>;
 
+  std::vector<float> final_results;
 
 template <typename T>
 struct QueryNode{
@@ -104,10 +105,12 @@ class Executor {
 
   // Used on the CPU side
   float host_result_;
+  // newly added
+  const int my_block_size_;
 
  public:
-  Executor(const int tid, const int stream_id)
-      : my_tid_(tid), my_stream_id_(stream_id) {}
+  Executor(const int tid, const int stream_id, const int block_size)
+      : my_tid_(tid), my_stream_id_(stream_id), my_block_size_(block_size) {}
 
   /*
   void StartQuery(const Point4F q, const oct::Node<float>* root) {
@@ -132,6 +135,7 @@ class Executor {
     stats_.branch_node_reduced = 0;
     my_q_ = q;
     host_result_ = 0.0f;
+    //host_results_ = std::unordered_map<int, float>{};
     TraverseRecursiveCpu(root);
   }
 
@@ -140,6 +144,7 @@ class Executor {
     stats_.branch_node_reduced = 0;
     my_q_ = q;
     host_result_ = 0.0f;
+    //host_results_ = std::unordered_map<int, float>{};
     //std::cout <<"traverse point blocking"<<std::endl;
     TraversePointBlocking(root, stack, 0);
   }
@@ -147,7 +152,7 @@ class Executor {
   _NODISCARD ExecutorStats GetStats() const { return stats_; }
 
   _NODISCARD float GetCpuResult() const { return host_result_; }
-
+ // _NODISCARD std::unordered_map<int, float> GetCpuPbResult() const {return host_results_;}
  private:
   _NODISCARD static float ComputeThetaValue(const oct::Node<float>* node,
                                             const Point4F& pos) {
@@ -198,27 +203,18 @@ class Executor {
     Block<T>* next_block = bset.getNextBlock();
     next_block->recycle();
     int size = block->size();
-    //std::cout <<"level: " << level <<std::endl;
-    //std::cout <<"size: " <<size<<std::endl;
     for (int i = 0; i < size; i++){
-      //std::cout << "i :" << i <<std::endl;
       QueryNode<Point4F> query_node = block->get(i);
-     //std::cout<<"done getting query node" <<std::endl;
       if (cur->IsLeaf()) {
-      // std::cout << "leaf node" << std::endl;
       if (cur->bodies.empty()){
-        //std::cout<<"body is empty"<<std::endl;
         return;
       }
 
       // ------------------------------------------------------------
- //     std::cout << "trying to get leaf address" << std::endl;
      const auto leaf_addr = rdc::LntDataAddrAt(cur->uid);
-    // std::cout<<"done getting leaf address"<<std::endl;
       for (int j = 0; j < app_params.max_leaf_size; ++j) {
-  //      std::cout<<"j: "<< j << std::endl;
         host_result_ += functor(query_node.query, leaf_addr[j]);
-  //      std::cout <<"done doing result in leaf node"<<std::endl;
+        final_results[query_node.q_idx] += functor(query_node.query, leaf_addr[j]);
       }
       // ------------------------------------------------------------
 
@@ -226,18 +222,16 @@ class Executor {
     } else if (const auto my_theta = ComputeThetaValue(cur, query_node.query);
                my_theta < app_params.theta) {
       ++stats_.branch_node_reduced;
-      //std::cout<<"branch node"<<std::endl;
       // ------------------------------------------------------------
       host_result_ += functor(query_node.query, cur->CenterOfMass());
-            //  std::cout <<"done doing result in branch node"<<std::endl;
+     final_results[query_node.q_idx] += functor(query_node.query, cur->CenterOfMass());
+     //[query_node.q_idx] += functor(query_node.query, cur->CenterOfMass());
       // ---------------------------------------------------------------
 
     }  else {
-     // std::cout<<"add to next block"<<std::endl;
         next_block->add(QueryNode<Point4F>{query_node.query,query_node.q_idx });
       }
     }
-  //  std::cout <<"done processing current block" <<std::endl;
     if (next_block->size() > 0){
       stack->setBlock(level + 1, next_block);
       for(const auto child: cur->children){
@@ -336,6 +330,7 @@ int main(int argc, char** argv) {
     }
   }
 
+
   std::cout << "Building Tree..." << std::endl;
 
   const oct::BoundingBox<float> universe{
@@ -358,7 +353,6 @@ int main(int argc, char** argv) {
 
   tree.LoadPayload(lnt_addr, lnt_size_addr);
 
-  std::vector<float> final_results;
   final_results.resize(app_params.m);  // need to discard the first
 
   std::cout << "Starting Traversal... " << std::endl;
@@ -370,11 +364,11 @@ int main(int argc, char** argv) {
       std::vector<Block<Point4F>*> blocks;
       std::vector<BlockStack<Point4F>*> block_stack;
       int level = 0;
-      const int block_size = 2;
+      const int block_size = 32;
 
 
       for (int tid = 0; tid < app_params.num_threads; ++tid) {
-        cpu_exe.emplace_back(tid, 0);
+        cpu_exe.emplace_back(tid, 0, block_size);
         blocks.push_back(new Block<Point4F>(block_size));
         block_stack.push_back(new BlockStack<Point4F>(block_size, tree.GetStats().max_depth+1));
       }
@@ -391,13 +385,25 @@ int main(int argc, char** argv) {
           q_data[tid].pop();
           if (blocks[tid]->isFull(block_size)) {
             block_stack[tid]->setBlock(0, blocks[tid]);
-            //std::cout<<"block is full, start query at tid " << tid << std::endl;
             cpu_exe[tid].StartQueryPb(q, tree.GetRoot(), block_stack[tid]);
              blocks[tid] -> recycle();
-            final_results[q_idx] = cpu_exe[tid].GetCpuResult();
+            
+          //  for (const auto& pb_result : cpu_exe[tid].GetCpuPbResult()){
+            //  std::cout << "first: " << pb_result.first<<std::endl;
+             // final_results[pb_result.first] = pb_result.second;
+            //}
+           // final_results[q_idx] = cpu_exe[tid].GetCpuResult();
           }
         }
       }
+      /*
+       for (int tid = 0; tid < app_params.num_threads; ++tid) {
+            for (const auto& pb_result : cpu_exe[tid].GetCpuPbResult()){
+            // std::cout << "first: " << pb_result.first<<std::endl;
+              final_results[pb_result.first] = pb_result.second;
+        }
+       }
+       */
 
       // -------------------------------------------------------------
     } else {
@@ -408,7 +414,6 @@ int main(int argc, char** argv) {
   });
 
   // -------------------------------------------------------------
-
   for (int i = 0; i < 5; ++i) {
     const auto q = final_results[i];
     std::cout << i << ": " << q << std::endl;
