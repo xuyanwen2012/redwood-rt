@@ -10,7 +10,7 @@
 #else
 #define _REDWOOD_KERNEL
 #define _REDWOOD_KERNEL_INLINE
-#endif
+#endif  // #ifdef __CUDACC__
 
 #ifdef __CUDACC__
 #define MAX(x, y) fmaxf(x, y)
@@ -20,13 +20,15 @@
 #define MAX(x, y) std::max(x, y)
 #define SQRTF(x) std::sqrt(x)
 #define ABS(x) std::abs(x)
-#endif
+#endif  // #ifdef __CUDACC__
 
+#ifndef X
 #define X data[0]
 #define Y data[1]
 #define Z data[2]
 #define W data[3]
 #define SOFTENING 1e-9f
+#endif  // #ifndef X
 
 namespace dist {
 struct Euclidean {

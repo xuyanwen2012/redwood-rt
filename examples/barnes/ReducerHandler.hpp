@@ -29,13 +29,25 @@ _NODISCARD inline const Point4F* LntDataAddrAt(const int node_idx) {
   return lnt_base_addr + node_idx * stored_max_leaf_size;
 }
 
+_NODISCARD inline const int LntSizeAt(const int node_idx) {
+  return lnt_size_base_addr[node_idx];
+}
+
 using IndicesBuffer = redwood::UsmVector<int>;
+
+struct ResultBuffer {
+  void Alloc() { underlying_dat = redwood::UsmMalloc<float>(1); }
+  void DeAlloc() const { redwood::UsmFree(underlying_dat); }
+  _NODISCARD float* GetAddrAt() const { return underlying_dat; }
+  // 1 float for BH
+  float* underlying_dat;
+};
 
 inline int stored_num_threads;
 inline std::vector<std::array<IndicesBuffer, 2>> buffers;
-inline std::vector<std::array<float*, 2>> result_addr;
+inline std::vector<std::array<ResultBuffer, 2>> result_addr;
+
 inline std::vector<std::array<Point4F, 2>> h_query;
-inline std::vector<std::array<float, 2>> h_br_result;
 
 inline void Init(const int num_thread, const int batch_size) {
   redwood::Init(num_thread);
@@ -44,15 +56,14 @@ inline void Init(const int num_thread, const int batch_size) {
   buffers.resize(num_thread);
   result_addr.resize(num_thread);
   h_query.resize(num_thread);
-  h_br_result.resize(num_thread);
   for (int tid = 0; tid < num_thread; ++tid) {
     for (int i = 0; i < 2; ++i) {
       // Unified Shared Memory
       buffers[tid][i].reserve(batch_size);
-      result_addr[tid][i] = redwood::UsmMalloc<float>(1);
+      result_addr[tid][i].Alloc();
 
       redwood::AttachStreamMem(tid, i, buffers[tid][i].data());
-      redwood::AttachStreamMem(tid, i, result_addr[tid][i]);
+      redwood::AttachStreamMem(tid, i, result_addr[tid][i].underlying_dat);
     }
   }
 }
@@ -60,7 +71,8 @@ inline void Init(const int num_thread, const int batch_size) {
 inline void Release() {
   for (int tid = 0; tid < stored_num_threads; ++tid) {
     for (int i = 0; i < 2; ++i) {
-      redwood::UsmFree(result_addr[tid][i]);
+      // redwood::UsmFree(result_addr[tid][i]);
+      result_addr[tid][i].DeAlloc();
 
       // Mannuelly free a std::vector
       IndicesBuffer tmp;
@@ -74,51 +86,47 @@ inline void Release() {
 
 inline void ResetBuffer(const int tid, const int cur_stream) {
   buffers[tid][cur_stream].clear();
-  // Reset accumulator
-  *result_addr[tid][cur_stream] = 0.0f;
-  h_br_result[tid][cur_stream] = 0.0f;
 }
 
-_NODISCARD inline float GetResultValue(const int tid, const int stream_id) {
-  const auto device_result = *result_addr[tid][stream_id];
-  const auto host_result = h_br_result[tid][stream_id];
-  return device_result + host_result;
+_NODISCARD inline float* RequestResultAddr(const int tid, const int stream_id) {
+  return result_addr[tid][stream_id].GetAddrAt();
 }
 
 inline void SetQuery(const int tid, const int stream_id, const Point4F q) {
   h_query[tid][stream_id] = q;
 }
 
-inline void ReduceBranchNode(const int tid, const int stream_id,
-                             const Point4F center_of_mass) {
-  constexpr dist::Gravity my_functor;
-  my_functor(h_query[tid][stream_id], center_of_mass);
-}
-
 inline void ReduceLeafNode(const int tid, const int stream_id,
                            const int node_idx) {
-  buffers[tid][stream_id].push_back(node_idx);
+  // buffers[tid][stream_id].push_back(node_idx);
+  auto my_sum = float();
+  dist::Gravity functor{};
+
+  const auto node_addr = LntDataAddrAt(node_idx);
+  const auto num_leaf = lnt_size_base_addr[node_idx];
+  for (int j = 0; j < num_leaf; ++j) {
+    my_sum += functor(h_query[tid][stream_id], node_addr[j]);
+  }
+
+  *result_addr[tid][stream_id].underlying_dat += my_sum;
 }
 
-// inline void DebugCpuReduction(const Buffer& buf, const dist::Euclidean
-// functor,
-//                               const ResultBuffer& results) {
-//   const auto n = buf.Size();
+// inline void DebugCpuReduction(const IndicesBuffer& buf,
+//                               const dist::Gravity functor, const Point4F q,
+//                               float* result_addr) {
+//   const auto n = buf.size();
+//   auto my_sum = float();
 
 //   // i is batch id, = tid, = index in the buffer
 //   for (int i = 0; i < n; ++i) {
-//     const auto node_idx = buf.u_leaf_idx[i];
-//     const auto q = buf.u_qs[i];
-
+//     const auto node_idx = buf[i];
 //     const auto node_addr = LntDataAddrAt(node_idx);
-//     const auto addr = reinterpret_cast<KnnSet<float,
-//     1>*>(results.GetAddrAt(i));
-
 //     for (int j = 0; j < stored_max_leaf_size; ++j) {
-//       const float dist = functor(node_addr[j], q);
-//       addr->Insert(dist);
+//       my_sum += functor(node_addr[j], q);
 //     }
 //   }
+
+//   *result_addr += my_sum;
 // }
 
 inline void LaunchAsyncWorkQueue(const int tid, const int stream_id) {
@@ -131,7 +139,11 @@ inline void LaunchAsyncWorkQueue(const int tid, const int stream_id) {
     // 128? 256?
   }
 
-  dist::Gravity functor{};
+  // dist::Gravity functor{};
+  // DebugCpuReduction(buffers[tid][stream_id], functor,
+  // h_query[tid][stream_id],
+  //                   result_addr[tid][stream_id]);
+
   // redwood::NearestNeighborKernel(
   //     tid, stream_id, lnt_base_addr, stored_max_leaf_size,
   //     buffers[tid][stream_id].u_qs, buffers[tid][stream_id].u_leaf_idx,

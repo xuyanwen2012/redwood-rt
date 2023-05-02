@@ -23,6 +23,7 @@ struct ExecutorStats {
 };
 
 // Traverser class for BH Algorithm
+template <typename Functor>
 class Executor {
   // Store some reference used
   const int my_tid_;
@@ -34,9 +35,17 @@ class Executor {
   // Used on the CPU side
   float host_result_;
 
+  // Used on the GPU side
+  float* my_assigned_result_addr;
+
  public:
   Executor(const int tid, const int stream_id)
-      : my_tid_(tid), my_stream_id_(stream_id) {}
+      : my_tid_(tid), my_stream_id_(stream_id) {
+    my_assigned_result_addr = rdc::RequestResultAddr(tid, stream_id);
+
+    std::cout << tid << ", " << stream_id << ", " << my_assigned_result_addr
+              << std::endl;
+  }
 
   void StartQuery(const Point4F q, const oct::Node<float>* root) {
     // Clear executor's data
@@ -46,6 +55,8 @@ class Executor {
     // This is a host copy of q point, so some times the traversal doesn't have
     // to bother with accessing USM
     my_q_ = q;
+    host_result_ = 0.0f;
+    *my_assigned_result_addr = 0.0f;
 
     // Notify Reducer to
     // In case of FPGA, it will register the anchor point (q) into the registers
@@ -65,6 +76,7 @@ class Executor {
   _NODISCARD ExecutorStats GetStats() const { return stats_; }
 
   _NODISCARD float GetCpuResult() const { return host_result_; }
+  _NODISCARD float GetDeviceResult() const { return *my_assigned_result_addr; }
 
  private:
   _NODISCARD static float ComputeThetaValue(const oct::Node<float>* node,
@@ -97,7 +109,9 @@ class Executor {
       ++stats_.branch_node_reduced;
 
       // ------------------------------------------------------------
-      rdc::ReduceBranchNode(my_tid_, my_stream_id_, cur->CenterOfMass());
+      // rdc::ReduceBranchNode(my_tid_, my_stream_id_, cur->CenterOfMass());
+      constexpr Functor functor;
+      host_result_ += functor(my_q_, cur->CenterOfMass());
       // ---------------------------------------------------------------
 
     } else
@@ -107,14 +121,15 @@ class Executor {
 
   // CPU version
   void TraverseRecursiveCpu(const oct::Node<float>* cur) {
-    constexpr dist::Gravity functor;
+    constexpr Functor functor;
 
     if (cur->IsLeaf()) {
       if (cur->bodies.empty()) return;
 
       // ------------------------------------------------------------
       const auto leaf_addr = rdc::LntDataAddrAt(cur->uid);
-      for (int i = 0; i < app_params.max_leaf_size; ++i) {
+      const auto leaf_size = rdc::LntSizeAt(cur->uid);
+      for (int i = 0; i < leaf_size; ++i) {
         host_result_ += functor(my_q_, leaf_addr[i]);
       }
       // ------------------------------------------------------------
@@ -149,7 +164,7 @@ int main(int argc, char** argv) {
   // clang-format off
   options.add_options()
     ("f,file", "Input file name", cxxopts::value<std::string>())
-    ("m,query", "Number of particles to query", cxxopts::value<int>()->default_value("1048576"))
+    ("m,query", "Number of particles to query", cxxopts::value<int>()->default_value("4096"))
     ("t,thread", "Number of threads", cxxopts::value<int>()->default_value("1"))
     ("theta", "Theta Value", cxxopts::value<float>()->default_value("0.2"))
     ("l,leaf", "Maximum leaf node size", cxxopts::value<int>()->default_value("32"))
@@ -219,14 +234,14 @@ int main(int argc, char** argv) {
   tree.LoadPayload(lnt_addr, lnt_size_addr);
 
   std::vector<float> final_results;
-  final_results.resize(app_params.m);  // need to discard the first
+  final_results.reserve(app_params.m);  // need to discard the first
 
   std::cout << "Starting Traversal... " << std::endl;
 
   TimeTask("Traversal", [&] {
     if (app_params.cpu) {
       // ------------------- CPU ------------------------------------
-      std::vector<Executor> cpu_exe;
+      std::vector<Executor<dist::Gravity>> cpu_exe;
 
       for (int tid = 0; tid < app_params.num_threads; ++tid) {
         cpu_exe.emplace_back(tid, 0);
@@ -238,7 +253,7 @@ int main(int argc, char** argv) {
         while (!q_data[tid].empty()) {
           const auto [q_idx, q] = q_data[tid].front();
           cpu_exe[tid].StartQueryCpu(q, tree.GetRoot());
-          final_results[q_idx] = cpu_exe[tid].GetCpuResult();
+          final_results.push_back(cpu_exe[tid].GetCpuResult());
           q_data[tid].pop();
         }
       }
@@ -246,6 +261,99 @@ int main(int argc, char** argv) {
       // -------------------------------------------------------------
     } else {
       // ------------------- CUDA ------------------------------------
+
+      constexpr auto num_streams = 2;
+
+      // Setup traversers
+      std::vector<Executor<dist::Gravity>> exes;
+      exes.reserve(app_params.num_threads * num_streams);
+      for (int tid = 0; tid < app_params.num_threads; ++tid) {
+        for (int stream_id = 0; stream_id < num_streams; ++stream_id) {
+          exes.emplace_back(tid, stream_id);
+        }
+      }
+
+      constexpr auto tid_offset = num_streams;
+
+      int tid = 0;
+      auto cur_stream = 0;
+
+      const auto task = q_data[tid].front();
+      q_data[tid].pop();
+
+      rdc::ResetBuffer(tid, cur_stream);
+
+      const auto it = tid * tid_offset + cur_stream;
+
+      auto d_result = exes[it].GetDeviceResult();
+      auto h_result = exes[it].GetCpuResult();
+      std::cout << d_result << ", " << h_result << std::endl;
+
+      exes[it].StartQuery(task.second, tree.GetRoot());
+      if constexpr (true) {
+        std::cout << "\tl: " << exes[it].GetStats().leaf_node_reduced
+                  << "\tb: " << exes[it].GetStats().branch_node_reduced
+                  << std::endl;
+      }
+
+      // rdc::LaunchAsyncWorkQueue(tid, cur_stream);
+
+      // redwood::DeviceStreamSynchronize(tid, cur_stream);
+
+      d_result = exes[it].GetDeviceResult();
+      h_result = exes[it].GetCpuResult();
+
+      std::cout << d_result << ", " << h_result << std::endl;
+
+      //       constexpr auto tid_offset = num_streams;
+      // #pragma omp parallel for
+      //       for (int tid = 0; tid < app_params.num_threads; ++tid) {
+      //         auto cur_stream = 0;
+      //         bool init = false;
+      //         while (!q_data[tid].empty()) {
+      //           // Take a task
+      //           const auto task = q_data[tid].front();
+      //           q_data[tid].pop();
+
+      //           // Traverse tree
+      //           rdc::ResetBuffer(tid, cur_stream);
+      //           const auto it = tid * tid_offset + cur_stream;
+      //           exes[it].StartQuery(task.second, tree.GetRoot());
+
+      //           if constexpr (false) {
+      //             std::cout << "\tl: " <<
+      //             exes[it].GetStats().leaf_node_reduced
+      //                       << "\tb: " <<
+      //                       exes[it].GetStats().branch_node_reduced
+      //                       << std::endl;
+      //           }
+
+      //           // Compute collected
+      //           rdc::LaunchAsyncWorkQueue(tid, cur_stream);
+
+      //           // Switch to next stream
+      //           cur_stream = (cur_stream + 1) % num_streams;
+
+      //           // Write back
+      //           if (init) {
+      //             redwood::DeviceStreamSynchronize(tid, cur_stream);
+
+      //             const auto it = tid * tid_offset + cur_stream;
+      //             const auto d_result = exes[it].GetDeviceResult();
+      //             // const auto h_result = exes[it].GetCpuResult();
+      //             // exes[it].
+
+      //             // const auto result = rdc::GetResultValue(tid,
+      //             cur_stream);
+
+      //             final_results.push_back(d_result);
+      //           } else {
+      //             init = true;
+      //           }
+      //         }
+      //       }
+
+      //       redwood::DeviceSynchronize();
 
       // -------------------------------------------------------------
     }
