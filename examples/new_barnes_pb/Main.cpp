@@ -214,7 +214,7 @@ class Executor {
      const auto leaf_addr = rdc::LntDataAddrAt(cur->uid);
       for (int j = 0; j < app_params.max_leaf_size; ++j) {
         host_result_ += functor(query_node.query, leaf_addr[j]);
-        final_results[query_node.q_idx] += functor(query_node.query, leaf_addr[j]);
+       //final_results[query_node.q_idx] += functor(query_node.query, leaf_addr[j]);
       }
       // ------------------------------------------------------------
 
@@ -224,7 +224,7 @@ class Executor {
       ++stats_.branch_node_reduced;
       // ------------------------------------------------------------
       host_result_ += functor(query_node.query, cur->CenterOfMass());
-     final_results[query_node.q_idx] += functor(query_node.query, cur->CenterOfMass());
+     //final_results[query_node.q_idx] += functor(query_node.query, cur->CenterOfMass());
      //[query_node.q_idx] += functor(query_node.query, cur->CenterOfMass());
       // ---------------------------------------------------------------
 
@@ -329,8 +329,6 @@ int main(int argc, char** argv) {
       q_data[tid].emplace(i, RandPoint());
     }
   }
-
-
   std::cout << "Building Tree..." << std::endl;
 
   const oct::BoundingBox<float> universe{
@@ -364,7 +362,7 @@ int main(int argc, char** argv) {
       std::vector<Block<Point4F>*> blocks;
       std::vector<BlockStack<Point4F>*> block_stack;
       int level = 0;
-      const int block_size = 32;
+      const int block_size = 16;
 
 
       for (int tid = 0; tid < app_params.num_threads; ++tid) {
