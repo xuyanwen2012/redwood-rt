@@ -117,6 +117,11 @@ int main(int argc, char** argv) {
       }
     });
 
+      for (int i = 0; i < 5; ++i) {
+    const auto q = final_results1[i];
+    std::cout << i << ": " << q << std::endl;
+  }
+
   } else {
     // Use Redwood
     constexpr auto num_streams = 2;

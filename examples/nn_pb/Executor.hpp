@@ -128,12 +128,10 @@ class Executor {
       // **********************************
     } else {
       auto range = kdt::GetSubRange(cur, my_task_);
-      // std::cout<<"min: " << std::get<0>(range)<<std::endl;
-      // std::cout <<"max: " << std::get<1>(range) << std::endl;
       int min = std::get<0>(range);
       int max = std::get<1>(range);
       // **** Reduction at tree node ****
-      if ((min == -1 || max == -1) || (!cur->left_child->IsLeaf() && !cur->right_child->IsLeaf())) {
+      if ((min == -1 || max == -1) || (max - min > 200 )) {
         const unsigned accessor_idx =
             tree_ref->v_acc_[cur->node_type.tree.idx_mid];
         const float dist =
