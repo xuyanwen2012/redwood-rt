@@ -17,7 +17,7 @@
 
 using Task = std::pair<int, Point4F>;
 
-  std::vector<float> final_results;
+std::vector<float> final_results;
 /*
 template <typename T>
 struct QueryNode{
@@ -133,30 +133,32 @@ class Executor {
     stats_.branch_node_reduced = 0;
     my_q_ = q;
     host_result_ = 0.0f;
-    //host_results_ = std::unordered_map<int, float>{};
+    // host_results_ = std::unordered_map<int, float>{};
     TraverseRecursiveCpu(root);
   }
 
-    void StartQueryPb(const Point4F q, const oct::Node<float>* root, BlockStack* stack) {
+  void StartQueryPb(const Point4F q, const oct::Node<float>* root,
+                    BlockStack* stack) {
     stats_.leaf_node_reduced = 0;
     stats_.branch_node_reduced = 0;
     my_q_ = q;
     host_result_ = 0.0f;
-    //host_results_ = std::unordered_map<int, float>{};
-    //std::cout <<"traverse point blocking"<<std::endl;
+    // host_results_ = std::unordered_map<int, float>{};
+    // std::cout <<"traverse point blocking"<<std::endl;
     TraversePointBlocking(root, stack, 0);
   }
 
   _NODISCARD ExecutorStats GetStats() const { return stats_; }
 
   _NODISCARD float GetCpuResult() const { return host_result_; }
- // _NODISCARD std::unordered_map<int, float> GetCpuPbResult() const {return host_results_;}
+  // _NODISCARD std::unordered_map<int, float> GetCpuPbResult() const {return
+  // host_results_;}
  private:
   _NODISCARD static float ComputeThetaValue(const oct::Node<float>* node,
                                             const Point4F& pos) {
- //   std::cout << "compute thetavalue" <<std::endl;
+    //   std::cout << "compute thetavalue" <<std::endl;
     const auto com = node->CenterOfMass();
-  //  std::cout <<"done getting center of mass"<<std::endl;
+    //  std::cout <<"done getting center of mass"<<std::endl;
     auto norm_sqr = 1e-9f;
 
     // Use only the first three property (x, y, z) for this theta compuation
@@ -169,45 +171,49 @@ class Executor {
     return node->bounding_box.dimension.data[0] / norm;
   }
 
-  void TraversePointBlocking(const oct::Node<float>* cur, BlockStack* stack, int level) {
+  void TraversePointBlocking(const oct::Node<float>* cur, BlockStack* stack,
+                             int level) {
     constexpr dist::Gravity functor;
     BlockSet bset = stack->get(level);
     Block* block = bset.getBlock();
     Block* next_block = bset.getNextBlock();
     next_block->recycle();
     int size = block->size();
-    for (int i = 0; i < size; i++){
+    for (int i = 0; i < size; i++) {
       Task query_node = block->get(i);
       if (cur->IsLeaf()) {
-      if (cur->bodies.empty()){
-        return;
-      }
+        if (cur->bodies.empty()) {
+          return;
+        }
 
-      // ------------------------------------------------------------
-     const auto leaf_addr = rdc::LntDataAddrAt(cur->uid);
-      for (int j = 0; j < app_params.max_leaf_size; ++j) {
-        host_result_ += functor(query_node.second, leaf_addr[j]);
-       //final_results[query_node.q_idx] += functor(query_node.query, leaf_addr[j]);
-      }
-      // ------------------------------------------------------------
+        // ------------------------------------------------------------
+        const auto leaf_addr = rdc::LntDataAddrAt(cur->uid);
+        for (int j = 0; j < app_params.max_leaf_size; ++j) {
+          host_result_ += functor(query_node.second, leaf_addr[j]);
+          // final_results[query_node.q_idx] += functor(query_node.query,
+          // leaf_addr[j]);
+        }
+        // ------------------------------------------------------------
 
-      ++stats_.leaf_node_reduced;
-    } else if (const auto my_theta = ComputeThetaValue(cur, query_node.second);
-               my_theta < app_params.theta) {
-      ++stats_.branch_node_reduced;
-      // ------------------------------------------------------------
-      host_result_ += functor(query_node.second, cur->CenterOfMass());
-     //final_results[query_node.q_idx] += functor(query_node.query, cur->CenterOfMass());
-     //[query_node.q_idx] += functor(query_node.query, cur->CenterOfMass());
-      // ---------------------------------------------------------------
+        ++stats_.leaf_node_reduced;
+      } else if (const auto my_theta =
+                     ComputeThetaValue(cur, query_node.second);
+                 my_theta < app_params.theta) {
+        ++stats_.branch_node_reduced;
+        // ------------------------------------------------------------
+        host_result_ += functor(query_node.second, cur->CenterOfMass());
+        // final_results[query_node.q_idx] += functor(query_node.query,
+        // cur->CenterOfMass()); [query_node.q_idx] += functor(query_node.query,
+        // cur->CenterOfMass());
+        // ---------------------------------------------------------------
 
-    }  else {
+      } else {
         next_block->add(query_node);
       }
     }
-    if (next_block->size() > 0){
+    if (next_block->size() > 0) {
       stack->setBlock(level + 1, next_block);
-      for(const auto child: cur->children){
+      for (const auto child : cur->children) {
         if (child != nullptr) TraversePointBlocking(child, stack, level + 1);
       }
     }
@@ -304,27 +310,28 @@ int main(int argc, char** argv) {
   }
 
   std::vector<Task> temp_vec(q_data[0].size());
-  for(std::size_t i = 0; i < temp_vec.size(); i++){
+  for (std::size_t i = 0; i < temp_vec.size(); i++) {
     temp_vec[i] = q_data[0].front();
     q_data[0].pop();
   }
-      std::sort(temp_vec.begin(), temp_vec.end(), [](const auto& lhs, const auto& rhs){
-        Point4F lhp = lhs.second;
-        Point4F rhp = rhs.second;
-        if(lhp.data[0] != rhp.data[0]){
-          return lhp.data[0] < rhp.data[0];
-        }
-        if(lhp.data[1] != rhp.data[1]){
-          return lhp.data[1] < rhp.data[1];
-        }
-        if(lhp.data[2] != rhp.data[2]){
-          return lhp.data[2] < rhp.data[2];
-        }
-        if(lhp.data[3] != rhp.data[3]){
-          return lhp.data[3] < rhp.data[3];
-        }
-    });
-  for(const auto& elem: temp_vec){
+  std::sort(temp_vec.begin(), temp_vec.end(),
+            [](const auto& lhs, const auto& rhs) {
+              Point4F lhp = lhs.second;
+              Point4F rhp = rhs.second;
+              if (lhp.data[0] != rhp.data[0]) {
+                return lhp.data[0] < rhp.data[0];
+              }
+              if (lhp.data[1] != rhp.data[1]) {
+                return lhp.data[1] < rhp.data[1];
+              }
+              if (lhp.data[2] != rhp.data[2]) {
+                return lhp.data[2] < rhp.data[2];
+              }
+              if (lhp.data[3] != rhp.data[3]) {
+                return lhp.data[3] < rhp.data[3];
+              }
+            });
+  for (const auto& elem : temp_vec) {
     q_data[0].push(elem);
   }
   std::cout << "Building Tree..." << std::endl;
@@ -360,46 +367,30 @@ int main(int argc, char** argv) {
       std::vector<Block*> blocks;
       std::vector<BlockStack*> block_stack;
       int level = 0;
-      const int block_size = 32;
-
+      const int block_size = 512;
 
       for (int tid = 0; tid < app_params.num_threads; ++tid) {
         cpu_exe.emplace_back(tid, 0, block_size);
         blocks.push_back(new Block(block_size));
-        block_stack.push_back(new BlockStack(block_size, tree.GetStats().max_depth+1));
+        block_stack.push_back(
+            new BlockStack(block_size, tree.GetStats().max_depth + 1));
       }
-    
+
       // Run
 #pragma omp parallel for
       for (int tid = 0; tid < app_params.num_threads; ++tid) {
-        //std::cout << "tid: "<<tid<<std::endl;
+        // std::cout << "tid: "<<tid<<std::endl;
         while (!q_data[tid].empty()) {
           const auto [q_idx, q] = q_data[tid].front();
           blocks[tid]->add(Task{q_idx, q});
-          //cpu_exe[tid].StartQueryCpu(q, tree.GetRoot());
-          //final_results[q_idx] = cpu_exe[tid].GetCpuResult();
           q_data[tid].pop();
           if (blocks[tid]->isFull(block_size)) {
             block_stack[tid]->setBlock(0, blocks[tid]);
             cpu_exe[tid].StartQueryPb(q, tree.GetRoot(), block_stack[tid]);
-             blocks[tid] -> recycle();
-            
-          //  for (const auto& pb_result : cpu_exe[tid].GetCpuPbResult()){
-            //  std::cout << "first: " << pb_result.first<<std::endl;
-             // final_results[pb_result.first] = pb_result.second;
-            //}
-           // final_results[q_idx] = cpu_exe[tid].GetCpuResult();
+            blocks[tid]->recycle();
           }
         }
       }
-      /*
-       for (int tid = 0; tid < app_params.num_threads; ++tid) {
-            for (const auto& pb_result : cpu_exe[tid].GetCpuPbResult()){
-            // std::cout << "first: " << pb_result.first<<std::endl;
-              final_results[pb_result.first] = pb_result.second;
-        }
-       }
-       */
 
       // -------------------------------------------------------------
     } else {

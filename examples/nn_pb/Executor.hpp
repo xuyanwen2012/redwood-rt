@@ -131,7 +131,7 @@ class Executor {
       int min = std::get<0>(range);
       int max = std::get<1>(range);
       // **** Reduction at tree node ****
-      if ((min == -1 || max == -1) || (max - min > 200 )) {
+      if ((min == -1 || max == -1) || (max - min > 200)) {
         const unsigned accessor_idx =
             tree_ref->v_acc_[cur->node_type.tree.idx_mid];
         const float dist =
@@ -154,8 +154,6 @@ class Executor {
           TraversalRecursive(cur->GetChild(FlipDir(dir)));
         }
       } else {
-       // std::cout << "min: "<< min <<std::endl;
-      //  std::cout << "max: " << max <<std::endl;
         for (int i = min; i < max; i++) {
           const unsigned accessor_idx = tree_ref->v_acc_[i];
           const float dist =
