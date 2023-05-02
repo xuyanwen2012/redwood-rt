@@ -9,6 +9,8 @@
 #include "Redwood/Point.hpp"
 
 namespace kdt {
+  using Task = std::pair<int, Point4F>;
+
 enum class Dir { kLeft = 0, kRight };
 
 inline Dir FlipDir(const Dir dir) {
@@ -168,6 +170,29 @@ class KdTree {
       LoadPayloadRecursive(cur->right_child, usm_leaf_node_table);
     }
   }
+/*
+  std::tuple<int, int> GetSubRange(const Node* node,  Task target){
+    if (target.first < node->node_type. || target.first > node->end){
+      return std::make_tuple(-1 , -1);
+    }
+     //target  is completely contained within this node's range
+    if (node->min_idx <= target.first && node->max_idx >= target.first){
+      return std::make_tuple(node.min_idx, node.max_idx);
+    }
+
+    // target is partially contained within this node's range
+    std::tuple<int, int> left_range = GetSubRange(node->left_child, target);
+    std::tuple<int, int> right_range = GetSubRange(node->right_child, target);
+
+    if (left_range.first == -1 && left_range.second == -1){
+      return right_range;
+    }else if (right_range.first == -1 && right_range.second == -1){
+      return left_range;
+    }else{
+      return std::make_tuple(std::min(left_range.first, right_range.first), std::max(left_range.second, right_range.second));
+    }
+  }
+  */
 
   static int GetNextId() {
     static int uid_counter = 0;
