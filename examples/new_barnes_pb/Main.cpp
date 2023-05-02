@@ -18,19 +18,19 @@
 using Task = std::pair<int, Point4F>;
 
   std::vector<float> final_results;
-
+/*
 template <typename T>
 struct QueryNode{
   T query;
   int q_idx;
 };
+*/
 
-template <typename T>
 class Block {
  public:
   Block(int size) { size_ = size; }
 
-  void add(QueryNode<T> task) {
+  void add(Task task) {
     tasks_.push_back(task);
     size_ += 1;
   }
@@ -40,7 +40,7 @@ class Block {
     tasks_.clear();
   }
 
-  QueryNode<T> get(int index) { return tasks_[index]; }
+  Task get(int index) { return tasks_[index]; }
 
   int size() { return size_; }
 
@@ -48,45 +48,43 @@ class Block {
 
  private:
   int size_;
-  std::vector<QueryNode<T>> tasks_;
+  std::vector<Task> tasks_;
 };
 
-template <typename T>
 class BlockSet {
  public:
-  BlockSet<T>(int block_size) {
+  BlockSet(int block_size) {
     block_ = nullptr;
-    next_block_ = new Block<T>(block_size);
+    next_block_ = new Block(block_size);
   }
-  void setBlock(Block<T>* block) { block_ = block; }
+  void setBlock(Block* block) { block_ = block; }
 
-  void setNextBlock(Block<T>* block) { next_block_ = block; }
+  void setNextBlock(Block* block) { next_block_ = block; }
 
-  Block<T>* getBlock() { return block_; }
+  Block* getBlock() { return block_; }
 
-  Block<T>* getNextBlock() { return next_block_; }
+  Block* getNextBlock() { return next_block_; }
 
  private:
-  Block<T>* block_;
-  Block<T>* next_block_;
+  Block* block_;
+  Block* next_block_;
 };
 
-template <typename T>
 class BlockStack {
  public:
   BlockStack(int block_size, int level) {
-    stack_ = std::vector<BlockSet<T>>();
+    stack_ = std::vector<BlockSet>();
     for (int i = 0; i < level; ++i) {
-      stack_.push_back(BlockSet<T>(block_size));
+      stack_.push_back(BlockSet(block_size));
     }
   }
 
-  void setBlock(int num, Block<T>* block) { stack_[num].setBlock(block); }
+  void setBlock(int num, Block* block) { stack_[num].setBlock(block); }
 
-  BlockSet<T> get(int level) { return stack_[level]; }
+  BlockSet get(int level) { return stack_[level]; }
 
  private:
-  std::vector<BlockSet<T>> stack_;
+  std::vector<BlockSet> stack_;
 };
 
 struct ExecutorStats {
@@ -139,7 +137,7 @@ class Executor {
     TraverseRecursiveCpu(root);
   }
 
-    void StartQueryPb(const Point4F q, const oct::Node<float>* root, BlockStack<Point4F>* stack) {
+    void StartQueryPb(const Point4F q, const oct::Node<float>* root, BlockStack* stack) {
     stats_.leaf_node_reduced = 0;
     stats_.branch_node_reduced = 0;
     my_q_ = q;
@@ -170,41 +168,16 @@ class Executor {
     const auto norm = sqrtf(norm_sqr);
     return node->bounding_box.dimension.data[0] / norm;
   }
-  
-/*
-  // Main Barnes-Hut Traversal Algorithm, annotated with Redwood APIs
-  void TraverseRecursive(const oct::Node<float>* cur) {
-    if (cur->IsLeaf()) {
-      if (cur->bodies.empty()) return;
 
-      // ------------------------------------------------------------
-      rdc::ReduceLeafNode(my_tid_, my_stream_id_, cur->uid);
-      // ------------------------------------------------------------
-
-      ++stats_.leaf_node_reduced;
-    } else if (const auto my_theta = ComputeThetaValue(cur, my_q_);
-               my_theta < app_params.theta) {
-      ++stats_.branch_node_reduced;
-
-      // ------------------------------------------------------------
-      rdc::ReduceBranchNode(my_tid_, my_stream_id_, cur->CenterOfMass());
-      // ---------------------------------------------------------------
-
-    } else
-      for (const auto child : cur->children)
-        if (child != nullptr) TraverseRecursive(child);
-  }
-  */
-   template <typename T>
-  void TraversePointBlocking(const oct::Node<float>* cur, BlockStack<T>* stack, int level) {
+  void TraversePointBlocking(const oct::Node<float>* cur, BlockStack* stack, int level) {
     constexpr dist::Gravity functor;
-    BlockSet<T> bset = stack->get(level);
-    Block<T>* block = bset.getBlock();
-    Block<T>* next_block = bset.getNextBlock();
+    BlockSet bset = stack->get(level);
+    Block* block = bset.getBlock();
+    Block* next_block = bset.getNextBlock();
     next_block->recycle();
     int size = block->size();
     for (int i = 0; i < size; i++){
-      QueryNode<Point4F> query_node = block->get(i);
+      Task query_node = block->get(i);
       if (cur->IsLeaf()) {
       if (cur->bodies.empty()){
         return;
@@ -213,23 +186,23 @@ class Executor {
       // ------------------------------------------------------------
      const auto leaf_addr = rdc::LntDataAddrAt(cur->uid);
       for (int j = 0; j < app_params.max_leaf_size; ++j) {
-        host_result_ += functor(query_node.query, leaf_addr[j]);
+        host_result_ += functor(query_node.second, leaf_addr[j]);
        //final_results[query_node.q_idx] += functor(query_node.query, leaf_addr[j]);
       }
       // ------------------------------------------------------------
 
       ++stats_.leaf_node_reduced;
-    } else if (const auto my_theta = ComputeThetaValue(cur, query_node.query);
+    } else if (const auto my_theta = ComputeThetaValue(cur, query_node.second);
                my_theta < app_params.theta) {
       ++stats_.branch_node_reduced;
       // ------------------------------------------------------------
-      host_result_ += functor(query_node.query, cur->CenterOfMass());
+      host_result_ += functor(query_node.second, cur->CenterOfMass());
      //final_results[query_node.q_idx] += functor(query_node.query, cur->CenterOfMass());
      //[query_node.q_idx] += functor(query_node.query, cur->CenterOfMass());
       // ---------------------------------------------------------------
 
     }  else {
-        next_block->add(QueryNode<Point4F>{query_node.query,query_node.q_idx });
+        next_block->add(query_node);
       }
     }
     if (next_block->size() > 0){
@@ -329,6 +302,31 @@ int main(int argc, char** argv) {
       q_data[tid].emplace(i, RandPoint());
     }
   }
+
+  std::vector<Task> temp_vec(q_data[0].size());
+  for(std::size_t i = 0; i < temp_vec.size(); i++){
+    temp_vec[i] = q_data[0].front();
+    q_data[0].pop();
+  }
+      std::sort(temp_vec.begin(), temp_vec.end(), [](const auto& lhs, const auto& rhs){
+        Point4F lhp = lhs.second;
+        Point4F rhp = rhs.second;
+        if(lhp.data[0] != rhp.data[0]){
+          return lhp.data[0] < rhp.data[0];
+        }
+        if(lhp.data[1] != rhp.data[1]){
+          return lhp.data[1] < rhp.data[1];
+        }
+        if(lhp.data[2] != rhp.data[2]){
+          return lhp.data[2] < rhp.data[2];
+        }
+        if(lhp.data[3] != rhp.data[3]){
+          return lhp.data[3] < rhp.data[3];
+        }
+    });
+  for(const auto& elem: temp_vec){
+    q_data[0].push(elem);
+  }
   std::cout << "Building Tree..." << std::endl;
 
   const oct::BoundingBox<float> universe{
@@ -359,16 +357,16 @@ int main(int argc, char** argv) {
     if (app_params.cpu) {
       // ------------------- CPU ------------------------------------
       std::vector<Executor> cpu_exe;
-      std::vector<Block<Point4F>*> blocks;
-      std::vector<BlockStack<Point4F>*> block_stack;
+      std::vector<Block*> blocks;
+      std::vector<BlockStack*> block_stack;
       int level = 0;
-      const int block_size = 16;
+      const int block_size = 32;
 
 
       for (int tid = 0; tid < app_params.num_threads; ++tid) {
         cpu_exe.emplace_back(tid, 0, block_size);
-        blocks.push_back(new Block<Point4F>(block_size));
-        block_stack.push_back(new BlockStack<Point4F>(block_size, tree.GetStats().max_depth+1));
+        blocks.push_back(new Block(block_size));
+        block_stack.push_back(new BlockStack(block_size, tree.GetStats().max_depth+1));
       }
     
       // Run
@@ -377,7 +375,7 @@ int main(int argc, char** argv) {
         //std::cout << "tid: "<<tid<<std::endl;
         while (!q_data[tid].empty()) {
           const auto [q_idx, q] = q_data[tid].front();
-          blocks[tid]->add(QueryNode<Point4F>{q, q_idx});
+          blocks[tid]->add(Task{q_idx, q});
           //cpu_exe[tid].StartQueryCpu(q, tree.GetRoot());
           //final_results[q_idx] = cpu_exe[tid].GetCpuResult();
           q_data[tid].pop();
