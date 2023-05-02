@@ -13,7 +13,7 @@
 #include "../LoadFile.hpp"
 #include "../Utils.hpp"
 #include "../cxxopts.hpp"
-#include "AppParams.hpp"
+#include "../nn/AppParams.hpp"
 #include "Executor.hpp"
 #include "Functors/DistanceMetrics.hpp"
 #include "GlobalVars.hpp"
@@ -117,10 +117,10 @@ int main(int argc, char** argv) {
       }
     });
 
-      for (int i = 0; i < 5; ++i) {
-    const auto q = final_results1[i];
-    std::cout << i << ": " << q << std::endl;
-  }
+    for (int i = 0; i < 5; ++i) {
+      const auto q = final_results1[i];
+      std::cout << i << ": " << q << std::endl;
+    }
 
   } else {
     // Use Redwood

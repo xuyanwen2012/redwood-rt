@@ -7,12 +7,18 @@
 #include "Redwood/Point.hpp"
 
 namespace oct {
+
 #define X 0
 #define Y 1
 #define Z 2
 #define MASS 3
 
 using IndexT = int;
+template <typename T>
+struct DataRange {
+  int start;
+  int end;
+};
 
 // For oct tree the bounding box is always 3D
 template <typename T>
