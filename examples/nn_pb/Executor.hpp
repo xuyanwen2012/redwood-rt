@@ -6,6 +6,73 @@
 
 using Task = std::pair<int, Point4F>;
 
+class Block {
+ public:
+  Block(int size) { size_ = size; }
+
+  void add(Task task) {
+    tasks_.push_back(task);
+    size_ += 1;
+  }
+
+  void recycle() {
+    size_ = 0;
+    tasks_.clear();
+  }
+
+  Task get(int index) { return tasks_[index]; }
+
+  int size() { return size_; }
+
+  bool isFull(int block_size) { return size_ >= block_size; }
+
+ private:
+  int size_;
+  std::vector<Task> tasks_;
+};
+
+class BlockSet {
+ public:
+  BlockSet(int block_size) {
+    block_ = nullptr;
+    next_block_ = new Block(block_size);
+    next_block_2_ = new Block(block_size);
+  }
+  void setBlock(Block* block) { block_ = block; }
+
+  void setNextBlock(Block* block) { next_block_ = block; }
+
+  void setNextBlock2(Block* block) { next_block_2_ = block; }
+
+  Block* getBlock() { return block_; }
+
+  Block* getNextBlock() { return next_block_; }
+
+  Block* getNextBlock2() { return next_block_2_; }
+
+ private:
+  Block* block_;
+  Block* next_block_;
+  Block* next_block_2_;
+};
+
+class BlockStack {
+ public:
+  BlockStack(int block_size, int level) {
+    stack_ = std::vector<BlockSet>();
+    for (int i = 0; i < level; ++i) {
+      stack_.push_back(BlockSet(block_size));
+    }
+  }
+
+  void setBlock(int num, Block* block) { stack_[num].setBlock(block); }
+
+  BlockSet get(int level) { return stack_[level]; }
+
+ private:
+  std::vector<BlockSet> stack_;
+};
+
 enum class ExecutionState { kWorking, kFinished };
 
 struct CallStackField {
@@ -49,6 +116,11 @@ class Executor {
   _NODISCARD float CpuTraverse() {
     result_set->Reset();
     TraversalRecursive(tree_ref->root_);
+    return result_set->WorstDist();
+  }
+    _NODISCARD float CpuTraversePb(BlockStack *block_stack, int level) {
+    result_set->Reset();
+    TraversalRecursivePB(tree_ref->root_, block_stack, 0);
     return result_set->WorstDist();
   }
 
@@ -114,6 +186,69 @@ class Executor {
     state_ = ExecutionState::kFinished;
 
     final_results1[my_task_.first] = result_set->WorstDist();
+  }
+
+  void TraversalRecursivePB(const kdt::Node* cur, BlockStack* block_stack,
+                            int level) {
+    constexpr Functor functor;
+    BlockSet bset = block_stack->get(level);
+    Block* block = bset.getBlock();
+    Block* next_block = bset.getNextBlock();
+    Block* next_block2 = bset.getNextBlock2();
+    next_block->recycle();
+    next_block2->recycle();
+    int size = block->size();
+    for (int i = 0; i < size; i++) {
+      //std::cout <<"i: " << i <<std::endl;
+      Task query_node = block->get(i);
+      if (cur->IsLeaf()) {
+        // **** Reduction at leaf node ****
+        const auto leaf_addr = rdc::LntDataAddrAt(cur->uid);
+        for (int j = 0; j < rdc::stored_max_leaf_size; ++j) {
+          const float dist = functor(leaf_addr[i], query_node.second);
+          result_set->Insert(dist);
+        }
+        // **********************************
+      } else {
+        // **** Reduction at tree node ****
+        const unsigned accessor_idx =
+            tree_ref->v_acc_[cur->node_type.tree.idx_mid];
+        const float dist =
+            functor(tree_ref->in_data_ref_[accessor_idx], query_node.second);
+        result_set->Insert(dist);
+        // **********************************
+
+        // Determine which child node to traverse next
+        const auto axis = cur->node_type.tree.axis;
+        const auto train = tree_ref->in_data_ref_[accessor_idx].data[axis];
+        const auto dir = query_node.second.data[axis] < train
+                             ? kdt::Dir::kLeft
+                             : kdt::Dir::kRight;
+        if (dir == kdt::Dir::kLeft) {
+          next_block->add(query_node);
+        } else {
+          next_block2->add(query_node);
+        }
+        if (const auto diff = functor(query_node.second.data[axis], train);
+            diff < result_set->WorstDist()) {
+          if (dir == kdt::Dir::kRight) {
+            next_block->add(query_node);
+          } else {
+            next_block2->add(query_node);
+          }
+        }
+      }
+    }
+    if (next_block->size() > 0) {
+      block_stack->setBlock(level + 1, next_block);
+      TraversalRecursivePB(cur->GetChild(kdt::Dir::kLeft), block_stack,
+                           level + 1);
+    }
+    if (next_block2->size() > 0) {
+      block_stack->setBlock(level + 1, next_block2);
+      TraversalRecursivePB(cur->GetChild(kdt::Dir::kRight), block_stack,
+                           level + 1);
+    }
   }
 
   void TraversalRecursive(const kdt::Node* cur) {

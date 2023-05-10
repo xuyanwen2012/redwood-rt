@@ -73,7 +73,6 @@ int main(int argc, char** argv) {
 
   const auto in_data = load_data_from_file<Point4F>(data_file);
   const auto n = in_data.size();
-
   // For each thread
   std::vector<std::queue<Task>> q_data(app_params.num_threads);
   const auto tasks_per_thread = app_params.m / app_params.num_threads;
@@ -100,27 +99,44 @@ int main(int argc, char** argv) {
   std::cout << "Starting Traversal..." << std::endl;
   if (app_params.cpu) {
     TimeTask("CPU Traversal", [&] {
+      std::vector<Block*> blocks;
+      std::vector<BlockStack*> block_stack;
+      int level = 0;
+      const int block_size = 512;
+
       std::vector<Executor<dist::Euclidean>> cpu_exe;
       for (int tid = 0; tid < app_params.num_threads; ++tid) {
         cpu_exe.emplace_back(tid, 0, 0);
+        blocks.push_back(new Block(block_size));
+        block_stack.push_back(
+            new BlockStack(block_size, tree_ref->GetStats().max_depth + 1));
       }
+
 
       // Run
 #pragma omp parallel for
       for (int tid = 0; tid < app_params.num_threads; ++tid) {
         while (!q_data[tid].empty()) {
           const auto task = q_data[tid].front();
-          cpu_exe[tid].SetQuery(task);
-          final_results1[task.first] = cpu_exe[tid].CpuTraverse();
+          blocks[tid]->add(task);
           q_data[tid].pop();
+          if (blocks[tid]->isFull(block_size)) {
+            block_stack[tid]->setBlock(0, blocks[tid]);
+            cpu_exe[tid].CpuTraversePb(block_stack[tid], 0);
+            blocks[tid]->recycle();
+          }
+          // cpu_exe[tid].SetQuery(task);
+          // final_results1[task.first] = cpu_exe[tid].CpuTraverse();
         }
       }
     });
 
+  /*
     for (int i = 0; i < 5; ++i) {
       const auto q = final_results1[i];
       std::cout << i << ": " << q << std::endl;
     }
+    */
 
   } else {
     // Use Redwood

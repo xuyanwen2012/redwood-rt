@@ -18,13 +18,7 @@
 using Task = std::pair<int, Point4F>;
 
 std::vector<float> final_results;
-/*
-template <typename T>
-struct QueryNode{
-  T query;
-  int q_idx;
-};
-*/
+
 
 class Block {
  public:
@@ -262,7 +256,7 @@ int main(int argc, char** argv) {
   // clang-format off
   options.add_options()
     ("f,file", "Input file name", cxxopts::value<std::string>())
-    ("m,query", "Number of particles to query", cxxopts::value<int>()->default_value("1048576"))
+    ("m,query", "Number of particles to query", cxxopts::value<int>()->default_value("102400"))
     ("t,thread", "Number of threads", cxxopts::value<int>()->default_value("1"))
     ("theta", "Theta Value", cxxopts::value<float>()->default_value("0.2"))
     ("l,leaf", "Maximum leaf node size", cxxopts::value<int>()->default_value("32"))
@@ -367,7 +361,7 @@ int main(int argc, char** argv) {
       std::vector<Block*> blocks;
       std::vector<BlockStack*> block_stack;
       int level = 0;
-      const int block_size = 512;
+      const int block_size = 256;
 
       for (int tid = 0; tid < app_params.num_threads; ++tid) {
         cpu_exe.emplace_back(tid, 0, block_size);
