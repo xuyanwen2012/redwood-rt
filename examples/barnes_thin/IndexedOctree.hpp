@@ -167,6 +167,9 @@ class Octree {
 
   int BuildRecursive(const BoundingBox<T> box, const int low, const int high,
                      const int depth) {
+    if (low == high){
+      return -1;
+    }
     int cur = new_node();
     bounding_boxes[cur] = box;
      //std::cout<<"cur: " <<cur <<std::endl;
@@ -192,7 +195,7 @@ class Octree {
       BoundingBox<T> sub_boxes[8];
       split_box(box, sub_boxes);
       
-      std::stable_sort(data_+ low, data_+low+n,
+      std::stable_sort(data_+ low, data_+low+n-1,
             [box](const PointT& a, const PointT& b) {
               const int group_id_a =
                   DetermineQuadrant(box, a.data[0], a.data[1], a.data[2]);
@@ -203,8 +206,9 @@ class Octree {
               return 0;
             });
             
+            
         
-      int count[8];
+      volatile int count[8];
       for (int i = 0; i < 8; ++i) {
         count[i] = 0;
       }
@@ -216,15 +220,6 @@ class Octree {
         // sub_bodies[quadrant].push_back(bodies_[i]);
         count[quadrant] += 1;
       }
-      /*
-      int offset = low;
-      for (const auto quadrant : sub_bodies) {
-        for (auto idx : quadrant) {
-          bodies_[offset] = idx;
-          offset += 1;
-        }
-      }
-      */
 
       int next_low = low;
       for(int i = 0; i < 8; ++i){

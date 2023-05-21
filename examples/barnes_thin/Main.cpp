@@ -249,10 +249,15 @@ class Executor {
 
 _NODISCARD inline Point4F RandPoint() {
   Point4F p;
-  p.data[0] = MyRand(0, 1000);
+  p.data[0] = static_cast<float>(rand()) / RAND_MAX * 1000.0f;
+    p.data[1] =  static_cast<float>(rand())  / RAND_MAX * 1000.0f;
+  p.data[2] = static_cast<float>(rand()) / RAND_MAX * 1000.0f;
+  p.data[3] = static_cast<float>(rand())  / RAND_MAX * 1000.0f;
+  /*
   p.data[1] = MyRand(0, 1000);
   p.data[2] = MyRand(0, 1000);
   p.data[3] = MyRand(0, 1000);
+  */
   return p;
 }
 
