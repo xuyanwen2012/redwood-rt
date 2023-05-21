@@ -141,7 +141,6 @@ class Executor {
     my_q_ = q;
     host_result_ = 0.0f;
     // host_results_ = std::unordered_map<int, float>{};
-     std::cout <<"traverse point blocking"<<std::endl;
     TraversePointBlocking(root, stack, 0);
   }
 
@@ -298,12 +297,8 @@ int main(int argc, char** argv) {
 
   std::cout << "Loading Data..." << std::endl;
 
-  const auto in_data = load_data_from_file<Point4F>(data_file);
+  auto in_data = load_data_from_file<Point4F>(data_file);
   const auto n = in_data.size();
-  std::vector<Point4F> in_data_test;
-  for(int i = 0; i < 100; i++){
-    in_data_test.push_back(RandPoint());
-  }
 
   // For each thread
   std::vector<std::queue<Task>> q_data(app_params.num_threads);
@@ -348,25 +343,24 @@ int main(int argc, char** argv) {
   const oct::OctreeParams<float> params{
       app_params.theta, static_cast<size_t>(app_params.max_leaf_size),
       universe};
-  oct::Octree<float> tree(in_data_test.data(), static_cast<int>(100), params);
+  oct::Octree<float> tree(in_data.data(), static_cast<int>(50000), params);
   tree.BuildTree();
   std::cout <<"finished building tree"<<std::endl;
   // Inits
-  //rdc::Init(app_params.num_threads, app_params.batch_size);
+  rdc::Init(app_params.num_threads, app_params.batch_size);
   omp_set_num_threads(app_params.num_threads);
   const auto num_leaf_nodes = tree.GetStats().num_leaf_nodes;
-  std::cout<<"num_leaf_nodes: " <<num_leaf_nodes<<std::endl;
-  //auto [lnt_addr, lnt_size_addr] =
-   //   rdc::AllocateLnt(num_leaf_nodes, app_params.max_leaf_size);
+  auto [lnt_addr, lnt_size_addr] =
+     rdc::AllocateLnt(num_leaf_nodes, app_params.max_leaf_size);
   std::cout <<"start load payload"<<std::endl;
 
- // tree.LoadPayload(lnt_addr, lnt_size_addr);
+  tree.LoadPayload(lnt_addr, lnt_size_addr);
   std::cout <<"finished load payload"<<std::endl;
 
   final_results.resize(app_params.m);  // need to discard the first
 
   std::cout << "Starting Traversal... " << std::endl;
-
+/*
   TimeTask("Traversal", [&] {
     if (app_params.cpu) {
       // ------------------- CPU ------------------------------------
@@ -375,18 +369,22 @@ int main(int argc, char** argv) {
       std::vector<BlockStack*> block_stack;
       int level = 0;
       const int block_size = 32;
-
       for (int tid = 0; tid < app_params.num_threads; ++tid) {
         cpu_exe.emplace_back(tid, 0, block_size);
-        blocks.push_back(new Block(block_size));
+       std::cout <<"cpu"<<std::endl;
+       blocks.push_back(new Block(block_size));
+        std::cout<<"blocks"<<std::endl;
         block_stack.push_back(
-            new BlockStack(block_size, tree.GetStats().max_depth + 1));
+           new BlockStack(block_size, tree.GetStats().max_depth + 1));
+            std::cout<<"block_stack"<<std::endl;
       }
       // Run
+      std::cout <<"run"<<std::endl;
 #pragma omp parallel for
       for (int tid = 0; tid < app_params.num_threads; ++tid) {
         while (!q_data[tid].empty()) {
           const auto [q_idx, q] = q_data[tid].front();
+
           blocks[tid]->add(Task{q_idx, q});
           q_data[tid].pop();
           if (blocks[tid]->isFull(block_size)) {
@@ -395,6 +393,12 @@ int main(int argc, char** argv) {
             blocks[tid]->recycle();
           }
         }
+      }
+      for(int i = 0; i < blocks.size(); ++i){
+        delete blocks[i];
+      }
+      for(int i = 0; i < block_stack.size(); ++i){
+        delete block_stack[i];
       }
 
       // -------------------------------------------------------------
@@ -405,12 +409,15 @@ int main(int argc, char** argv) {
     }
   });
 
+
   // -------------------------------------------------------------
   for (int i = 0; i < 5; ++i) {
     const auto q = final_results[i];
     std::cout << i << ": " << q << std::endl;
   }
+  */
 
   rdc::Release();
+  std::cout<<"done release"<<std::endl;
   return EXIT_SUCCESS;
 }

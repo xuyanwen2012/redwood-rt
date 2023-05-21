@@ -16,7 +16,7 @@ namespace oct {
 
 using IndexT = int;
 
-const int MAX_NODES = 200;
+const int MAX_NODES = 50000;
 
 template <typename T>
 struct Range {
@@ -37,6 +37,7 @@ struct BoundingBox {
     };
   }
 };
+
 
 template <typename T>
 struct OctreeParams {
@@ -77,7 +78,7 @@ struct Node {
   bool is_leaf;
   int uid;
 };
-
+/*
 template <typename T>
 class Array {
  private:
@@ -100,16 +101,30 @@ class Array {
   // Accessor: Get size of the array
   size_t getSize() const { return size_; }
 };
+*/
 
+BoundingBox<float> bounding_boxes[MAX_NODES];
+float node_masses[MAX_NODES];
+Point<4, float> center_of_mass[MAX_NODES];
+Point<4, float> node_weighted_pos[MAX_NODES];
+Node<Point4F> nodes[MAX_NODES];
+
+  /*
 Array<BoundingBox<float>> bounding_boxes = Array<BoundingBox<float>>(MAX_NODES);
 Array<float> node_masses = Array<float>(MAX_NODES);
 Array<Point<4, float>> center_of_mass = Array<Point<4, float>>(MAX_NODES);
 Array<Point<4, float>> node_weighted_pos = Array<Point<4, float>>(MAX_NODES);
 Array<Node<Point4F>> nodes = Array<Node<Point4F>>(MAX_NODES);
+*/
 std::array<std::pair<int, int>, MAX_NODES> range;
 
 int next_node = 0;
 
+int new_node(){
+  int cur = next_node;
+  next_node += 1;
+  return cur;
+}
 template <typename T>
 class Octree {
   // Octree must be 3D, so this is fine
@@ -130,7 +145,7 @@ class Octree {
     std::cout << "build recursive" << std::endl;
     root_ = BuildRecursive(params_.starting_box, 0, data_size_ - 1, 0);
     std::cout << "compute node mass" << std::endl;
-    //ComputeNodeMassRecursive(root_);
+    ComputeNodeMassRecursive(root_);
 
     if constexpr (true) {
       std::cout << "Tree Statistic: \n"
@@ -152,18 +167,18 @@ class Octree {
 
   int BuildRecursive(const BoundingBox<T> box, const int low, const int high,
                      const int depth) {
-    int cur = next_node;
-    next_node += 1;
+    int cur = new_node();
     bounding_boxes[cur] = box;
      //std::cout<<"cur: " <<cur <<std::endl;
     const size_t n = high - low;
+    /*
       for (int i = 0; i < depth; i++) {
         std::cout << "-";
       }
       std::cout << "[" << cur << "]"
                 << "low: " << low << "\thigh: " << high << "\tn: " << n
                 << std::endl;
-  
+  */
     if (n <= params_.leaf_max_size) {
       ++statistic_.num_leaf_nodes;
       statistic_.max_depth = std::max(depth, statistic_.max_depth);
@@ -176,7 +191,8 @@ class Octree {
       nodes[cur].uid = GetNextBranchId();
       BoundingBox<T> sub_boxes[8];
       split_box(box, sub_boxes);
-      std::sort(data_+ low, data_+low+n,
+      
+      std::stable_sort(data_+ low, data_+low+n,
             [box](const PointT& a, const PointT& b) {
               const int group_id_a =
                   DetermineQuadrant(box, a.data[0], a.data[1], a.data[2]);
@@ -186,6 +202,7 @@ class Octree {
               if (group_id_a > group_id_b) return 1;
               return 0;
             });
+            
         
       int count[8];
       for (int i = 0; i < 8; ++i) {
@@ -249,7 +266,6 @@ class Octree {
   }
   void LoadPayloadRecursive(int cur, Point4F* leaf_node_content_table,
                             int* leaf_node_size_table) {
-    std::cout<<"curr"<<std::endl;
     if (nodes[cur].IsLeaf()) {
       auto counter = 0;
       const auto offset = nodes[cur].uid * params_.leaf_max_size;
@@ -302,7 +318,7 @@ class Octree {
     sub_boxes[7] =
         BoundingBox<float>{{x_mid, y_mid, z_mid}, {x_max, y_max, z_max}};
   }
-  static int DetermineQuadrant(const BoundingBox<T> box, const T x, const T y,
+  static int DetermineQuadrant( const BoundingBox<T>& box, const T x, const T y,
                                const T z) {
     const float x_mid = (box.min.data[0] + box.max.data[0]) / 2.0f;
     const float y_mid = (box.min.data[1] + box.max.data[1]) / 2.0f;
