@@ -164,7 +164,7 @@ int main(int argc, char** argv) {
   // clang-format off
   options.add_options()
     ("f,file", "Input file name", cxxopts::value<std::string>())
-    ("m,query", "Number of particles to query", cxxopts::value<int>()->default_value("4096"))
+    ("m,query", "Number of particles to query", cxxopts::value<int>()->default_value("102400"))
     ("t,thread", "Number of threads", cxxopts::value<int>()->default_value("1"))
     ("theta", "Theta Value", cxxopts::value<float>()->default_value("0.2"))
     ("l,leaf", "Maximum leaf node size", cxxopts::value<int>()->default_value("32"))
@@ -360,11 +360,12 @@ int main(int argc, char** argv) {
   });
 
   // -------------------------------------------------------------
-
+  /*
   for (int i = 0; i < 5; ++i) {
     const auto q = final_results[i];
     std::cout << i << ": " << q << std::endl;
   }
+  */
 
   rdc::Release();
   return EXIT_SUCCESS;

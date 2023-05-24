@@ -361,7 +361,7 @@ int main(int argc, char** argv) {
       std::vector<Block*> blocks;
       std::vector<BlockStack*> block_stack;
       int level = 0;
-      const int block_size = 256;
+      const int block_size = 128;
 
       for (int tid = 0; tid < app_params.num_threads; ++tid) {
         cpu_exe.emplace_back(tid, 0, block_size);
@@ -393,12 +393,13 @@ int main(int argc, char** argv) {
       // -------------------------------------------------------------
     }
   });
-
+  /*
   // -------------------------------------------------------------
   for (int i = 0; i < 5; ++i) {
     const auto q = final_results[i];
     std::cout << i << ": " << q << std::endl;
   }
+  */
 
   rdc::Release();
   return EXIT_SUCCESS;

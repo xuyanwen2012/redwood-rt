@@ -248,9 +248,11 @@ class Executor {
 
 
 _NODISCARD inline Point4F RandPoint() {
+  
   Point4F p;
+  
   p.data[0] = static_cast<float>(rand()) / RAND_MAX * 1000.0f;
-    p.data[1] =  static_cast<float>(rand())  / RAND_MAX * 1000.0f;
+  p.data[1] =  static_cast<float>(rand())  / RAND_MAX * 1000.0f;
   p.data[2] = static_cast<float>(rand()) / RAND_MAX * 1000.0f;
   p.data[3] = static_cast<float>(rand())  / RAND_MAX * 1000.0f;
   /*
@@ -258,6 +260,7 @@ _NODISCARD inline Point4F RandPoint() {
   p.data[2] = MyRand(0, 1000);
   p.data[3] = MyRand(0, 1000);
   */
+  
   return p;
 }
 
@@ -267,7 +270,7 @@ int main(int argc, char** argv) {
   // clang-format off
   options.add_options()
     ("f,file", "Input file name", cxxopts::value<std::string>())
-    ("m,query", "Number of particles to query", cxxopts::value<int>()->default_value("1024"))
+    ("m,query", "Number of particles to query", cxxopts::value<int>()->default_value("10240"))
     ("t,thread", "Number of threads", cxxopts::value<int>()->default_value("1"))
     ("theta", "Theta Value", cxxopts::value<float>()->default_value("0.2"))
     ("l,leaf", "Maximum leaf node size", cxxopts::value<int>()->default_value("32"))
@@ -304,6 +307,10 @@ int main(int argc, char** argv) {
 
   auto in_data = load_data_from_file<Point4F>(data_file);
   const auto n = in_data.size();
+  std::vector<Point4F> in_data_test;
+  for(int i = 0; i < 50000; ++i){
+    in_data_test.push_back(RandPoint());
+  }
 
   // For each thread
   std::vector<std::queue<Task>> q_data(app_params.num_threads);
@@ -348,7 +355,7 @@ int main(int argc, char** argv) {
   const oct::OctreeParams<float> params{
       app_params.theta, static_cast<size_t>(app_params.max_leaf_size),
       universe};
-  oct::Octree<float> tree(in_data.data(), static_cast<int>(50000), params);
+  oct::Octree<float> tree(in_data.data(), static_cast<int>(n), params);
   tree.BuildTree();
   std::cout <<"finished building tree"<<std::endl;
   // Inits
@@ -365,7 +372,7 @@ int main(int argc, char** argv) {
   final_results.resize(app_params.m);  // need to discard the first
 
   std::cout << "Starting Traversal... " << std::endl;
-/*
+
   TimeTask("Traversal", [&] {
     if (app_params.cpu) {
       // ------------------- CPU ------------------------------------
@@ -373,7 +380,7 @@ int main(int argc, char** argv) {
       std::vector<Block*> blocks;
       std::vector<BlockStack*> block_stack;
       int level = 0;
-      const int block_size = 32;
+      const int block_size = 128;
       for (int tid = 0; tid < app_params.num_threads; ++tid) {
         cpu_exe.emplace_back(tid, 0, block_size);
        std::cout <<"cpu"<<std::endl;
@@ -416,11 +423,13 @@ int main(int argc, char** argv) {
 
 
   // -------------------------------------------------------------
+  /*
   for (int i = 0; i < 5; ++i) {
     const auto q = final_results[i];
     std::cout << i << ": " << q << std::endl;
   }
   */
+  
 
   rdc::Release();
   std::cout<<"done release"<<std::endl;

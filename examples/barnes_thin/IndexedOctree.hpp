@@ -16,7 +16,7 @@ namespace oct {
 
 using IndexT = int;
 
-const int MAX_NODES = 50000;
+const int MAX_NODES = 500000;
 
 template <typename T>
 struct Range {
@@ -33,7 +33,7 @@ struct BoundingBox {
   static BoundingBox Unit() {
     return {
         Point<3, T>{0.0, 0.0, 0.0},  // min
-        Point<3, T>{1000, 1000, 1000}   // max
+        Point<3, T>{1.0, 1.0, 1.0}   // max
     };
   }
 };
@@ -174,14 +174,6 @@ class Octree {
     bounding_boxes[cur] = box;
      //std::cout<<"cur: " <<cur <<std::endl;
     const size_t n = high - low;
-    /*
-      for (int i = 0; i < depth; i++) {
-        std::cout << "-";
-      }
-      std::cout << "[" << cur << "]"
-                << "low: " << low << "\thigh: " << high << "\tn: " << n
-                << std::endl;
-  */
     if (n <= params_.leaf_max_size) {
       ++statistic_.num_leaf_nodes;
       statistic_.max_depth = std::max(depth, statistic_.max_depth);
@@ -194,16 +186,17 @@ class Octree {
       nodes[cur].uid = GetNextBranchId();
       BoundingBox<T> sub_boxes[8];
       split_box(box, sub_boxes);
-      
-      std::stable_sort(data_+ low, data_+low+n-1,
+    
+      std::stable_sort(data_+ low, data_+low+n,
             [box](const PointT& a, const PointT& b) {
               const int group_id_a =
                   DetermineQuadrant(box, a.data[0], a.data[1], a.data[2]);
               const int group_id_b =
                   DetermineQuadrant(box, b.data[0], b.data[1], b.data[2]);
               if (group_id_a < group_id_b) return -1;
-              if (group_id_a > group_id_b) return 1;
-              return 0;
+              return 1;
+            //  if (group_id_a > group_id_b) return 1;
+              //return 0;
             });
             
             
@@ -215,9 +208,11 @@ class Octree {
       // std::array<std::vector<IndexT>, 8> sub_bodies{};
 
       for (auto i = low; i < high; ++i) {
+        const float x = data_[i].data[0];
+        const float y = data_[i].data[1];
+        const float z = data_[i].data[2];
         const auto quadrant = DetermineQuadrant(
-            box, data_[i].data[X], data_[i].data[Y], data_[i].data[Z]);
-        // sub_bodies[quadrant].push_back(bodies_[i]);
+            box, x, y, z);
         count[quadrant] += 1;
       }
 
@@ -242,9 +237,9 @@ class Octree {
       if (range[cur].first != range[cur].second) {
         for (auto i = range[cur].first; i < range[cur].second; i++) {
           node_masses[cur] += data_[i].data[MASS];
-          node_weighted_pos[cur].data[X] += data_[i].data[X];
-          node_weighted_pos[cur].data[Y] += data_[i].data[Y];
-          node_weighted_pos[cur].data[Z] += data_[i].data[Z];
+          node_weighted_pos[cur].data[0] += data_[i].data[0];
+          node_weighted_pos[cur].data[1] += data_[i].data[1];
+          node_weighted_pos[cur].data[2] += data_[i].data[2];
         }
       }
     } else {
@@ -286,7 +281,7 @@ class Octree {
     }
   }
 
-  void split_box(const BoundingBox<T> box, BoundingBox<T> (&sub_boxes)[8]) {
+  void split_box(const BoundingBox<T>& box, BoundingBox<T> (&sub_boxes)[8]) {
     const float x_min = box.min.data[0];
     const float y_min = box.min.data[1];
     const float z_min = box.min.data[2];
@@ -296,58 +291,52 @@ class Octree {
     const float x_mid = (x_min + x_max) / 2.0f;
     const float y_mid = (y_min + y_max) / 2.0f;
     const float z_mid = (z_min + z_max) / 2.0f;
+    /*
+    for(int i = 0; i < 8; i++){
+      const float x_min_i = (i % 2 == 0) ? x_min : x_mid;
+      const float x_max_i = (i % 2 == 0) ? x_mid : x_max;
+      const float y_min_i = (i % 2 == 0) ? y_min : y_mid;
+      const float y_max_i = (i % 2 == 0) ? y_mid : y_max;
+      const float z_min_i = (i % 2 == 0) ? z_min : z_mid;
+      const float z_max_i = (i % 2 == 0) ? z_mid : z_max;
+      sub_boxes[i] = BoundingBox<float>{{x_min_i, y_min_i, z_min_i}, {x_max_i, y_max_i, z_max_i}};
+    }
+    */
+    
     sub_boxes[0] =
         BoundingBox<float>{{x_min, y_min, z_min}, {x_mid, y_mid, z_mid}};
-    sub_boxes[1] =
+    sub_boxes[1] =// BoundingBox<float>{{x_min, y_min, z_mid}, {x_mid, y_mid, z_max}};
         BoundingBox<float>{{x_mid, y_min, z_min}, {x_max, y_mid, z_mid}};
     sub_boxes[2] =
         BoundingBox<float>{{x_min, y_mid, z_min}, {x_mid, y_max, z_mid}};
-    sub_boxes[3] =
+    sub_boxes[3] =// BoundingBox<float>{{x_min, y_mid, z_mid}, {x_mid, y_max, z_max}};
         BoundingBox<float>{{x_mid, y_mid, z_min}, {x_max, y_max, z_mid}};
-    sub_boxes[4] =
+    sub_boxes[4] =// BoundingBox<float>{{x_mid, y_min, z_min}, {x_max, y_mid, z_mid}};
+
         BoundingBox<float>{{x_min, y_min, z_mid}, {x_mid, y_mid, z_max}};
     sub_boxes[5] =
         BoundingBox<float>{{x_mid, y_min, z_mid}, {x_max, y_mid, z_max}};
-    sub_boxes[6] =
+    sub_boxes[6] = //BoundingBox<float>{{x_mid, y_mid, z_min}, {x_max, y_max, z_mid}};
         BoundingBox<float>{{x_min, y_mid, z_mid}, {x_mid, y_max, z_max}};
     sub_boxes[7] =
         BoundingBox<float>{{x_mid, y_mid, z_mid}, {x_max, y_max, z_max}};
+        
   }
   static int DetermineQuadrant( const BoundingBox<T>& box, const T x, const T y,
                                const T z) {
     const float x_mid = (box.min.data[0] + box.max.data[0]) / 2.0f;
     const float y_mid = (box.min.data[1] + box.max.data[1]) / 2.0f;
     const float z_mid = (box.min.data[2] + box.max.data[2]) / 2.0f;
-    int quadrant;
-    if (x < x_mid) {
-      if (y < y_mid) {
-        if (z < z_mid) {
-          quadrant = 0;
-        } else {
-          quadrant = 4;
-        }
-      } else {
-        if (z < z_mid) {
-          quadrant = 2;
-        } else {
-          quadrant = 6;
-        }
-      }
-    } else {
-      if (y < y_mid) {
-        if (z < z_mid) {
-          quadrant = 1;
-        } else {
-          quadrant = 5;
-        }
-      } else {
-        if (z < z_mid) {
-          quadrant = 3;
-        } else {
-          quadrant = 7;
-        }
-      }
-    }
+    int quadrant = 0;
+   if (x > x_mid){
+    quadrant |= 1;
+   }
+   if (y > y_mid){
+    quadrant |= 2;
+   }
+   if(z > z_mid){
+    quadrant |= 4;
+   }
     return quadrant;
   }
 
