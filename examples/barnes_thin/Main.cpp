@@ -358,6 +358,7 @@ int main(int argc, char** argv) {
   oct::Octree<float> tree(in_data.data(), static_cast<int>(n), params);
   tree.BuildTree();
   std::cout <<"finished building tree"<<std::endl;
+  /*
   // Inits
   rdc::Init(app_params.num_threads, app_params.batch_size);
   omp_set_num_threads(app_params.num_threads);
