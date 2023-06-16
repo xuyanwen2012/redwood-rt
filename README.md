@@ -2,8 +2,6 @@
 
 ## Redwood and Grove
 
-Working on Documentation Now, instructions coming soon
-
 Old SYCL backend was in https://github.com/xuyanwen2012/new-redwood
 
 Old CUDA backend was in https://github.com/xuyanwen2012/redwood
