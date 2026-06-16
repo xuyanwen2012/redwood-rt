@@ -142,4 +142,24 @@ template void KnnKernel<Point4F, 32, dist::Euclidean>(
     const Point4F* u_q, const int* u_node_idx, int num_active, float* u_out,
     dist::Euclidean functor);
 
+// Additional distance metrics (NN/KNN) and interactions (BH) from the paper.
+template void NearestNeighborKernel<Point4F, dist::Manhattan>(
+    int, int, const Point4F*, int, const Point4F*, const int*, int, float*,
+    dist::Manhattan);
+template void NearestNeighborKernel<Point4F, dist::Chebyshev>(
+    int, int, const Point4F*, int, const Point4F*, const int*, int, float*,
+    dist::Chebyshev);
+template void KnnKernel<Point4F, 32, dist::Manhattan>(
+    int, int, const Point4F*, int, const Point4F*, const int*, int, float*,
+    dist::Manhattan);
+template void KnnKernel<Point4F, 32, dist::Chebyshev>(
+    int, int, const Point4F*, int, const Point4F*, const int*, int, float*,
+    dist::Chebyshev);
+template void BarnesKernel<Point4F, dist::Gaussian>(
+    int, int, const Point4F*, int, const Point4F*, const int*, int, float*,
+    dist::Gaussian);
+template void BarnesKernel<Point4F, dist::TopHat>(
+    int, int, const Point4F*, int, const Point4F*, const int*, int, float*,
+    dist::TopHat);
+
 }  // namespace redwood
