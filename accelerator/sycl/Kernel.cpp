@@ -39,8 +39,69 @@ void NearestNeighborKernel(int /*tid*/, int stream_id, const T* u_lnt,
   });
 }
 
+// Barnes-Hut leaf reduction: one work-item per active slot sums the leaf's
+// interactions and folds the result into u_out[i].
+template <typename T, typename Functor>
+void BarnesKernel(int /*tid*/, int stream_id, const T* u_lnt, int max_leaf_size,
+                  const T* u_q, const int* u_node_idx, int num_active,
+                  float* u_out, Functor functor) {
+  if (num_active <= 0) return;
+  g_queues[stream_id].submit([&](sycl::handler& h) {
+    h.parallel_for(sycl::range<1>(num_active), [=](sycl::id<1> idx) {
+      const int i = static_cast<int>(idx[0]);
+      const int leaf_id = u_node_idx[i];
+      const T q = u_q[i];
+
+      float my_sum = 0.0f;
+      for (int j = 0; j < max_leaf_size; ++j) {
+        my_sum += functor(q, u_lnt[leaf_id * max_leaf_size + j]);
+      }
+      u_out[i] += my_sum;
+    });
+  });
+}
+
+// KNN leaf reduction: one work-item per active slot merges the leaf's distances
+// into the running sorted K-nearest set at u_out + i*K.
+template <typename T, int K, typename Functor>
+void KnnKernel(int /*tid*/, int stream_id, const T* u_lnt, int max_leaf_size,
+               const T* u_q, const int* u_node_idx, int num_active,
+               float* u_out, Functor functor) {
+  if (num_active <= 0) return;
+  g_queues[stream_id].submit([&](sycl::handler& h) {
+    h.parallel_for(sycl::range<1>(num_active), [=](sycl::id<1> idx) {
+      const int i = static_cast<int>(idx[0]);
+      const int leaf_id = u_node_idx[i];
+      const T q = u_q[i];
+      float* rank = u_out + i * K;
+
+      for (int j = 0; j < max_leaf_size; ++j) {
+        const float dist = functor(u_lnt[leaf_id * max_leaf_size + j], q);
+        if (dist < rank[K - 1]) {
+          int pos = K - 1;
+          while (pos > 0 && rank[pos - 1] > dist) {
+            rank[pos] = rank[pos - 1];
+            --pos;
+          }
+          rank[pos] = dist;
+        }
+      }
+    });
+  });
+}
+
 // Match the explicit instantiation list of the other backends.
 template void NearestNeighborKernel<Point4F, dist::Euclidean>(
+    int tid, int stream_id, const Point4F* u_lnt, int max_leaf_size,
+    const Point4F* u_q, const int* u_node_idx, int num_active, float* u_out,
+    dist::Euclidean functor);
+
+template void BarnesKernel<Point4F, dist::Gravity>(
+    int tid, int stream_id, const Point4F* u_lnt, int max_leaf_size,
+    const Point4F* u_q, const int* u_node_idx, int num_active, float* u_out,
+    dist::Gravity functor);
+
+template void KnnKernel<Point4F, 32, dist::Euclidean>(
     int tid, int stream_id, const Point4F* u_lnt, int max_leaf_size,
     const Point4F* u_q, const int* u_node_idx, int num_active, float* u_out,
     dist::Euclidean functor);
