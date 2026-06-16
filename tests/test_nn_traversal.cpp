@@ -49,11 +49,18 @@ class NnTraversal : public ::testing::Test {
     const kdt::KdtParams params{kLeafSize};
     tree_ref = std::make_shared<kdt::KdTree>(params, data_.data(), kNumPoints);
 
+    // Initialize the backend BEFORE any UsmMalloc. The SYCL backend needs its
+    // device/context created first (malloc_shared binds to them); allocating
+    // earlier binds the memory to an empty context and later frees fail with
+    // UR_RESULT_ERROR_INVALID_VALUE. CUDA tolerates the reversed order via its
+    // implicit context, which is why examples/nn/Main.cpp (AllocateLnt before
+    // Init) happens to work on CUDA but is a latent cross-backend bug.
+    rdc::Init(/*num_thread=*/1, /*batch_size=*/kBatch);
+
     const int num_leaf = tree_ref->GetStats().num_leaf_nodes;
     auto* lnt = rdc::AllocateLnt(num_leaf, kLeafSize);
     tree_ref->LoadPayload(lnt);
 
-    rdc::Init(/*num_thread=*/1, /*batch_size=*/kBatch);
     final_results1.resize(kBatch);
   }
 

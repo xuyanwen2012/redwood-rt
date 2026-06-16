@@ -1,52 +1,45 @@
-
 #include "Redwood/Core.hpp"
 
-#include <CL/sycl.hpp>
+#include <sycl/sycl.hpp>
+
+#include <iostream>
 
 #include "Consts.hpp"
-#include "SyclUtils.hpp"
 
-// Global Variables
-sycl::device device;
-sycl::context ctx;
-sycl::queue qs[kNumStreams];
-
-void SyclWarmUp(sycl::queue& q) {
-  int sum;
-  sycl::buffer<int> sum_buf(&sum, 1);
-  q.submit([&](auto& h) {
-    sycl::accessor sum_acc(sum_buf, h, sycl::write_only, sycl::no_init);
-    h.parallel_for(1, [=](auto) { sum_acc[0] = 0; });
-  });
-  q.wait();
-}
+// Backend-wide SYCL state, shared with Usm.cpp and Kernel.cpp via extern.
+// The context must be created and stored here (the previous version left the
+// global `ctx` default-constructed, so USM allocations used the wrong context).
+sycl::device g_device;
+sycl::context g_context;
+sycl::queue g_queues[kNumStreams];
 
 namespace redwood {
 
-void Init() {
-  try {
-    device = sycl::device(sycl::gpu_selector_v);
-  } catch (const sycl::exception& e) {
-    std::cout << "Cannot select a GPU\n" << e.what() << "\n";
-    exit(1);
+void Init(int /*num_threads*/) {
+  // default_selector_v picks the best available device. In CI / containers
+  // that is typically the OpenCL CPU runtime; on a SYCL-capable GPU it picks
+  // the GPU. (The old code hard-coded gpu_selector_v, which aborts when no GPU
+  // is present.)
+  g_device = sycl::device(sycl::default_selector_v);
+  g_context = sycl::context(g_device);
+  for (int i = 0; i < kNumStreams; ++i) {
+    g_queues[i] = sycl::queue(g_context, g_device);
   }
 
-  qs[0] = sycl::queue(device);
-  for (int i = 1; i < kNumStreams; i++)
-    qs[i] = sycl::queue(qs[0].get_context(), device);
-
-  ShowDevice(qs[0]);
-  SyclWarmUp(qs[0]);
+  std::cout << "redwood(SYCL)::Init device: "
+            << g_device.get_info<sycl::info::device::name>() << std::endl;
 }
 
-void DeviceStreamSynchronize(const int stream_id) { qs[stream_id].wait(); }
+void DeviceStreamSynchronize(int /*tid*/, int stream_id) {
+  g_queues[stream_id].wait();
+}
 
 void DeviceSynchronize() {
-  for (int i = 0; i < kNumStreams; ++i) DeviceStreamSynchronize(i);
+  for (auto& q : g_queues) q.wait();
 }
 
-void AttachStreamMem(const int stream_id, void* addr) {
-  // No Op
+void AttachStreamMem(int /*tid*/, int /*stream_id*/, void* /*addr*/) {
+  // No-op: malloc_shared memory is accessible from every queue in the context.
 }
 
 }  // namespace redwood

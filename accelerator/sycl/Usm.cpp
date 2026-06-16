@@ -1,26 +1,22 @@
 #include "Redwood/Usm.hpp"
 
-#include <CL/sycl.hpp>
-#include <iostream>
+#include <sycl/sycl.hpp>
+
+extern sycl::device g_device;
+extern sycl::context g_context;
 
 namespace redwood {
 
-extern sycl::device device;
-extern sycl::context ctx;
-
-void* UsmMalloc(const std::size_t n) {
-  void* tmp;
-  std::cout << "accelerator::UsmMalloc() " << tmp << ": " << n << " bytes."
-            << std::endl;
-  tmp = sycl::malloc_shared(n, device, ctx);
-  return tmp;
+// USM is SYCL shared memory: accessible from both host and device, so the same
+// pointer the kernels use can also be read/written directly on the host (as the
+// CPU traversal does). Created against the backend context from Core.cpp.
+void* UsmMalloc(std::size_t n) {
+  if (n == 0) return nullptr;
+  return sycl::malloc_shared(n, g_device, g_context);
 }
 
 void UsmFree(void* ptr) {
-  std::cout << "accelerator::UsmFree() " << ptr << std::endl;
-  if (ptr) {
-    sycl::free(ptr, ctx);
-  }
+  if (ptr) sycl::free(ptr, g_context);
 }
 
 }  // namespace redwood
