@@ -22,21 +22,23 @@
 #define ABS(x) std::abs(x)
 #endif  // #ifdef __CUDACC__
 
-#ifndef X
-#define X data[0]
-#define Y data[1]
-#define Z data[2]
-#define W data[3]
+// NOTE: previously this header #define'd single-letter macros X/Y/Z/W for
+// data[0..3]. Because the macros stayed live after inclusion, they leaked into
+// any subsequently-included header that used those identifiers -- which breaks
+// modern CUDA toolkit headers (e.g. nvtx3.hpp, cub) that legitimately use a
+// member/parameter named `W`. The functors now index data[] explicitly so no
+// macros escape this file.
+#ifndef SOFTENING
 #define SOFTENING 1e-9f
-#endif  // #ifndef X
+#endif  // #ifndef SOFTENING
 
 namespace dist {
 struct Euclidean {
   _REDWOOD_KERNEL float operator()(const Point4F p, const Point4F q) const {
-    const auto dx = p.X - q.X;
-    const auto dy = p.Y - q.Y;
-    const auto dz = p.Z - q.Z;
-    const auto dw = p.W - q.W;
+    const auto dx = p.data[0] - q.data[0];
+    const auto dy = p.data[1] - q.data[1];
+    const auto dz = p.data[2] - q.data[2];
+    const auto dw = p.data[3] - q.data[3];
     return SQRTF(dx * dx + dy * dy + dz * dz + dw * dw + SOFTENING);
   }
 
@@ -48,16 +50,17 @@ struct Euclidean {
 
 struct Manhattan {
   _REDWOOD_KERNEL float operator()(const Point4F p, const Point4F q) const {
-    return ABS(p.X - q.X) + ABS(p.Y - q.Y) + ABS(p.Z - q.Z) + ABS(p.W - q.W);
+    return ABS(p.data[0] - q.data[0]) + ABS(p.data[1] - q.data[1]) +
+           ABS(p.data[2] - q.data[2]) + ABS(p.data[3] - q.data[3]);
   }
 };
 
 struct Chebyshev {
   _REDWOOD_KERNEL float operator()(const Point4F p, const Point4F q) const {
-    const auto dx = ABS(p.X - q.X);
-    const auto dy = ABS(p.Y - q.Y);
-    const auto dz = ABS(p.Z - q.Z);
-    const auto dw = ABS(p.W - q.W);
+    const auto dx = ABS(p.data[0] - q.data[0]);
+    const auto dy = ABS(p.data[1] - q.data[1]);
+    const auto dz = ABS(p.data[2] - q.data[2]);
+    const auto dw = ABS(p.data[3] - q.data[3]);
     auto tmp1 = MAX(dx, dy);
     auto tmp2 = MAX(dz, dw);
     return MAX(tmp1, tmp2);
@@ -66,9 +69,9 @@ struct Chebyshev {
 
 struct Gravity {
   _REDWOOD_KERNEL float operator()(const Point4F p, const Point4F q) const {
-    const auto dx = p.X - q.X;
-    const auto dy = p.Y - q.Y;
-    const auto dz = p.Z - q.Z;
+    const auto dx = p.data[0] - q.data[0];
+    const auto dy = p.data[1] - q.data[1];
+    const auto dz = p.data[2] - q.data[2];
     const auto dist_sqr = dx * dx + dy * dy + dz * dz + SOFTENING;
     const auto inv_dist = 1.0f / SQRTF(dist_sqr);
     const auto inv_dist3 = inv_dist * inv_dist * inv_dist;
@@ -79,27 +82,27 @@ struct Gravity {
 
 struct Gaussian {
   _REDWOOD_KERNEL float operator()(const Point4F p, const Point4F q) const {
-    const auto dx = p.X - q.X;
-    const auto dy = p.Y - q.Y;
-    const auto dz = p.Z - q.Z;
+    const auto dx = p.data[0] - q.data[0];
+    const auto dy = p.data[1] - q.data[1];
+    const auto dz = p.data[2] - q.data[2];
     const auto dist_sqr = dx * dx + dy * dy + dz * dz + SOFTENING;
     constexpr auto sigma_sqr = 0.1f * 0.1f;
     const auto factor = 1.0f / (SQRTF(2.0f * M_PI) * sigma_sqr);
     const auto exponent = -dist_sqr / (2.0f * sigma_sqr);
-    const auto with_mass = factor * expf(exponent) * p.W;
+    const auto with_mass = factor * expf(exponent) * p.data[3];
     return dx * with_mass + dy * with_mass + dz * with_mass;
   }
 };
 
 struct TopHat {
   _REDWOOD_KERNEL float operator()(const Point4F p, const Point4F q) const {
-    const auto dx = p.X - q.X;
-    const auto dy = p.Y - q.Y;
-    const auto dz = p.Z - q.Z;
+    const auto dx = p.data[0] - q.data[0];
+    const auto dy = p.data[1] - q.data[1];
+    const auto dz = p.data[2] - q.data[2];
     const auto dist_sqr = dx * dx + dy * dy + dz * dz + SOFTENING;
     constexpr auto r = 0.1f;
     constexpr auto factor = 3.0f / (4.0f * M_PI * r * r * r);
-    const auto with_mass = factor * (dist_sqr <= r * r ? p.W : 0.0f);
+    const auto with_mass = factor * (dist_sqr <= r * r ? p.data[3] : 0.0f);
     return dx * with_mass + dy * with_mass + dz * with_mass;
   }
 };

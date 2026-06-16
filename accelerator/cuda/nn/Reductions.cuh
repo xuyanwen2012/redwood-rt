@@ -4,6 +4,7 @@
 #include <device_launch_parameters.h>
 
 #include <cub/cub.cuh>
+#include <cuda/functional>  // cuda::minimum (replaces removed cub::Min)
 #include <limits>
 
 #include "Redwood/Point.hpp"
@@ -75,7 +76,7 @@ __global__ void FindMinDistWarp6(const Point4F* lnt, const Point4F* u_q,
       const auto dist = functor(
           lnt[leaf_node_uid * max_leaf_size + group + lane_id], query_data);
 
-      auto my_min = WarpReduce(temp_storage[warp_id]).Reduce(dist, cub::Min());
+      auto my_min = WarpReduce(temp_storage[warp_id]).Reduce(dist, ::cuda::minimum<float>{});
       my_min = warp.shfl(my_min, 0);
 
       if (group_id == lane_id) {
@@ -83,7 +84,7 @@ __global__ void FindMinDistWarp6(const Point4F* lnt, const Point4F* u_q,
       }
     }
     auto gl_min = WarpReduce(temp_storage[warp_id])
-                      .Reduce(local_results[tid], cub::Min());
+                      .Reduce(local_results[tid], ::cuda::minimum<float>{});
 
     if (lane_id == 0) {
       leaf_node_results[warp_id * 32 + ln_id] = gl_min;

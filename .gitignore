@@ -35,4 +35,8 @@
 *.out
 *.app
 
-build
+# CMake out-of-source build directories (build, build-cuda, build-sycl, ...)
+build*/
+
+# CMake-generated compile database
+compile_commands.json
