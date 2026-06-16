@@ -2,6 +2,8 @@
 // Shared setup for the kernel benchmarks. Mirrors the test fixtures
 // (tests/test_*_kernel/reduction.cpp) but sized for performance measurement and
 // reused across the three algorithm benchmarks.
+#include <benchmark/benchmark.h>
+
 #include <cstddef>
 #include <random>
 
@@ -90,10 +92,16 @@ struct KernelInputs {
   }
 };
 
-// Leaf sizes swept by every algorithm benchmark (the paper's Table III knob).
-// num_active is fixed at 1024 (the paper's Nvidia batch, and the granularity the
-// NN warp kernel FindMinDistWarp6 is designed for).
-#define REDWOOD_BENCH_ARGS \
-  ArgsProduct({{32, 64, 128, 256, 512, 1024}, {1024}})->Unit(benchmark::kMicrosecond)
+// Args applied to every algorithm benchmark. Each point is (leaf, num_active):
+//   * leaf-size study  : sweep leaf {32..1024} at num_active=1024 (paper Table III knob)
+//   * scaling study    : sweep num_active {16K, 256K} at leaf=128
+// The scaling study is what saturates a GPU -- at num_active=1024 only a handful
+// of thread blocks launch, so the GPU sits ~99% idle and the comparison is
+// dominated by launch overhead. CPU kernels here are single-threaded serial.
+inline void RedwoodArgs(benchmark::internal::Benchmark* b) {
+  b->Unit(benchmark::kMicrosecond)->ArgNames({"leaf", "active"});
+  for (int leaf : {32, 64, 128, 256, 512, 1024}) b->Args({leaf, 1024});
+  for (int active : {16384, 262144}) b->Args({128, active});
+}
 
 }  // namespace bench

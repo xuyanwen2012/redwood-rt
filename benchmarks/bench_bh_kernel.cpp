@@ -36,4 +36,4 @@ static void BM_BhKernel(benchmark::State& state) {
   in.Free();
 }
 
-BENCHMARK(BM_BhKernel)->REDWOOD_BENCH_ARGS;
+BENCHMARK(BM_BhKernel)->Apply(bench::RedwoodArgs);

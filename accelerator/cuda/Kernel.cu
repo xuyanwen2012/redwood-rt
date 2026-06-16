@@ -65,6 +65,28 @@ __global__ void KnnKernelImpl(const T* lnt, const T* q, const int* node_idx,
   for (int t = 0; t < K; ++t) out[i * K + t] = rank[t];
 }
 
+// Nearest-neighbor leaf reduction, grid-stride one-thread-per-slot (mirrors the
+// BH/KNN kernels). Replaces the single-block warp kernel FindMinDistWarp6, which
+// launched dim_grid(1,1,1) and so used only one SM regardless of GPU size --
+// fine for the original fixed 1024-wide batch, but it cannot scale with
+// num_active. This version covers the whole GPU.
+template <typename T, typename Functor>
+__global__ void NnMinKernelImpl(const T* lnt, const T* q, const int* node_idx,
+                                float* out, int num_active, int max_leaf_size,
+                                Functor functor) {
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= num_active) return;
+  const int leaf_id = node_idx[i];
+  const T qi = q[i];
+
+  float my_min = std::numeric_limits<float>::max();
+  for (int j = 0; j < max_leaf_size; ++j) {
+    const float dist = functor(lnt[leaf_id * max_leaf_size + j], qi);
+    my_min = fminf(my_min, dist);
+  }
+  out[i] = fminf(out[i], my_min);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Wrapper functions for kernel launch
 ////////////////////////////////////////////////////////////////////////////////
@@ -74,11 +96,10 @@ void NearestNeighborKernel(const int tid, int stream_id, const T* u_lnt,
                            int max_leaf_size, const T* u_q,
                            const int* u_node_idx, int num_active, float* u_out,
                            Functor functor) {
-  constexpr dim3 dim_grid(1, 1, 1);
-  constexpr dim3 dim_block(1024, 1, 1);
-  constexpr auto smem_size = 0;
+  constexpr int kBlock = 256;
+  const int grid = (num_active + kBlock - 1) / kBlock;
   const auto my_stream_id = tid * kNumStreams + stream_id;
-  FindMinDistWarp6<<<dim_grid, dim_block, smem_size, streams[my_stream_id]>>>(
+  NnMinKernelImpl<<<grid, kBlock, 0, streams[my_stream_id]>>>(
       u_lnt, u_q, u_node_idx, u_out, num_active, max_leaf_size, functor);
 }
 
