@@ -12,6 +12,7 @@ set(REDWOOD_BACKEND "cpu" CACHE STRING "Accelerator backend: cpu | cuda | sycl")
 set_property(CACHE REDWOOD_BACKEND PROPERTY STRINGS cpu cuda sycl)
 
 option(REDWOOD_BUILD_TESTS "Build the unit test suite" ON)
+option(REDWOOD_BUILD_BENCHMARKS "Build the Google Benchmark suite" OFF)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
@@ -55,4 +56,11 @@ endif()
 if(REDWOOD_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
+endif()
+
+# ---------------------------------------------------------------------------
+# Benchmarks (opt-in: -DREDWOOD_BUILD_BENCHMARKS=ON)
+# ---------------------------------------------------------------------------
+if(REDWOOD_BUILD_BENCHMARKS)
+  add_subdirectory(benchmarks)
 endif()

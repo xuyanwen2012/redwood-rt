@@ -40,3 +40,6 @@ build*/
 
 # CMake-generated compile database
 compile_commands.json
+
+# Benchmark JSON output
+results/
