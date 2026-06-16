@@ -27,6 +27,7 @@ void NearestNeighborKernel(int /*tid*/, int stream_id, const T* u_lnt,
     h.parallel_for(sycl::range<1>(num_active), [=](sycl::id<1> idx) {
       const int i = static_cast<int>(idx[0]);
       const int leaf_id = u_node_idx[i];
+      if (leaf_id < 0) return;  // slot not active this pass (uid-indexed batch)
       const T q = u_q[i];
 
       float my_min = std::numeric_limits<float>::max();

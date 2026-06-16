@@ -67,7 +67,8 @@ class Executor {
         if (cur_->IsLeaf()) {
           // **** Reduction at Leaf Node (replaced with Redwood API) ****
 
-          rdc::ReduceLeafNode(my_tid_, my_stream_id_, my_task_, cur_->uid);
+          rdc::ReduceLeafNode(my_tid_, my_stream_id_, my_uid_, my_task_,
+                              cur_->uid);
 
           // **** Coroutine Reuturn (API) ****
           return;

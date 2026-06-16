@@ -77,6 +77,7 @@ __global__ void NnMinKernelImpl(const T* lnt, const T* q, const int* node_idx,
   const int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= num_active) return;
   const int leaf_id = node_idx[i];
+  if (leaf_id < 0) return;  // slot not active this pass (uid-indexed batch)
   const T qi = q[i];
 
   float my_min = std::numeric_limits<float>::max();

@@ -22,6 +22,7 @@ void NearestNeighborKernel(int /*tid*/, int /*stream_id*/, const T* u_lnt,
                            Functor functor) {
   for (int i = 0; i < num_active; ++i) {
     const int leaf_id = u_node_idx[i];
+    if (leaf_id < 0) continue;  // slot not active this pass (uid-indexed batch)
     const T q = u_q[i];
 
     auto my_min = std::numeric_limits<float>::max();

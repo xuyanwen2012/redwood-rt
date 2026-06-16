@@ -26,11 +26,23 @@ _NODISCARD inline const Point4F* LntDataAddrAt(const int node_idx) {
   return lnt_base_addr + node_idx * stored_max_leaf_size;
 }
 
-// For NN and KNN
+// For NN and KNN.
+//
+// The buffer is indexed by the executor's uid (its fixed slot in the batch),
+// which is also how the result buffer is indexed. Each executor therefore owns
+// one slot for the whole traversal, so the kernel's result lands back in that
+// executor's result slot and accumulates (min) correctly across the multiple
+// passes a single query takes. (The previous design pushed to a running counter,
+// so results were misrouted to other executors and never accumulated -- the
+// batched path produced wrong answers, which Main.cpp hid by recomputing on the
+// CPU afterwards.) The kernel scans the whole batch; slots not active this pass
+// are marked with leaf index -1 and skipped.
 struct Buffer {
   void Alloc(const int buffer_size) {
+    capacity_ = buffer_size;
     u_qs = redwood::UsmMalloc<Point4F>(buffer_size);
     u_leaf_idx = redwood::UsmMalloc<int>(buffer_size);
+    Reset();
   }
 
   void DeAlloc() const {
@@ -38,17 +50,18 @@ struct Buffer {
     redwood::UsmFree(u_leaf_idx);
   }
 
-  _NODISCARD int Size() const { return num_active; }
+  _NODISCARD int Size() const { return capacity_; }
 
-  void Reset() { num_active = 0; }
-
-  void Push(const Task& task, const int node_idx) {
-    u_qs[num_active] = task.second;
-    u_leaf_idx[num_active] = node_idx;
-    ++num_active;
+  void Reset() {
+    for (int i = 0; i < capacity_; ++i) u_leaf_idx[i] = -1;
   }
 
-  int num_active;
+  void Push(const int uid, const Task& task, const int node_idx) {
+    u_qs[uid] = task.second;
+    u_leaf_idx[uid] = node_idx;
+  }
+
+  int capacity_;
   Point4F* u_qs;
   int* u_leaf_idx;
 };
@@ -111,18 +124,19 @@ _NODISCARD inline float* RequestResultAddr(const int tid, const int stream_id,
   return result_addr[tid][stream_id].GetAddrAt(executor_index);
 }
 
-inline void ReduceLeafNode(const int tid, const int stream_id, const Task& task,
-                           const int node_idx) {
-  buffers[tid][stream_id].Push(task, node_idx);
+inline void ReduceLeafNode(const int tid, const int stream_id, const int uid,
+                           const Task& task, const int node_idx) {
+  buffers[tid][stream_id].Push(uid, task, node_idx);
 }
 
 inline void DebugCpuReduction(const Buffer& buf, const dist::Euclidean functor,
                               const ResultBuffer& results) {
   const auto n = buf.Size();
 
-  // i is batch id, = tid, = index in the buffer
+  // i is batch id, = executor uid, = index in the buffer
   for (int i = 0; i < n; ++i) {
     const auto node_idx = buf.u_leaf_idx[i];
+    if (node_idx < 0) continue;  // slot not active this pass
     const auto q = buf.u_qs[i];
 
     const auto node_addr = LntDataAddrAt(node_idx);
